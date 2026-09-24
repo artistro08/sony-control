@@ -10,41 +10,16 @@ A Windows 11 tray app that controls Sony headphones from a native WinUI flyout.
 | :---: | :---: | :---: |
 | ![The flyout's headphone list](docs/images/flyout-picker.png) | ![The WF-1000XM6 page in the flyout](docs/images/flyout-wf-1000xm6.png) | ![The WH-1000XM4 page in the flyout](docs/images/flyout-wh-1000xm4.png) |
 
-## Introduction
+## Tested & Supported headphones:
 
-Click the headphones icon in the tray and you get battery, noise control, ambient sound, Focus on Voice, scenes, switching the audio between your devices (multipoint), equalizer and DSEE in a flyout that looks like Windows' own. Everything else lives in a settings window. The app talks to the headphones over Bluetooth with protocol code based on [sony-device-center](https://github.com/marconvcm/sony-device-center) (MIT).
-
-Supported headphones:
-
-- WF-1000XM6 (verified first)
+- WF-1000XM
 - WH-1000XM4
+
+In theory, since we're using [sony-device-center](https://github.com/marconvcm/sony-device-center) from [marconvcm](https://github.com/marconvcm), the headphones supported there should work here. If not, open an issue and I'll investigate
 
 ## Installing
 
-Grab the latest release from the [Releases](https://github.com/artistro08/sony-control/releases) page. Pick `x64` for most PCs, or `arm64` for Snapdragon/ARM PCs. There are two ways to install:
-
-### Installer (easiest)
-
-Download `SonyControl_<version>_x64.msi` and run it. It installs just for you by default, with no admin prompt. Choose **Advanced** in the wizard if you want to install it for everyone on the PC instead.
-
-> Windows may say it protected your PC because the installer isn't from a known publisher. Click **More info**, then **Run anyway**.
-
-> If you turned on **Start when I sign in**, turn it off before uninstalling. Otherwise a dead entry stays in Settings > Apps > Startup (Windows just skips it).
-
-### MSIX package
-
-The MSIX is the Windows 11 app package. It's signed with a self-made certificate, so you trust that certificate once first:
-
-1. Download `SonyControl.cer` and `SonyControl_<version>_x64.msix`.
-2. From an elevated PowerShell in the download folder, trust the certificate:
-
-    ```powershell
-    Import-Certificate -FilePath .\SonyControl.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-    ```
-
-3. Double-click the `.msix`.
-
-> Logs live in the app's local data folder. Open them from Settings > General > Open log folder.
+Grab the latest release from the [Releases](https://github.com/artistro08/sony-control/releases) page.
 
 ## Building From Source
 
@@ -70,7 +45,7 @@ Build everything and run the tests:
 .\scripts\Build.ps1
 ```
 
-That's it for day-to-day work. XM4 tests are left out by default; add `-IncludeXm4` to run them.
+XM4 tests are left out by default; add `-IncludeXm4` to run them.
 
 To test against real headphones, set their Bluetooth address first. The hardware tests are skipped without it:
 
