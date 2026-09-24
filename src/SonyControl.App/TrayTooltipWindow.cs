@@ -16,7 +16,7 @@ namespace SonyControl.App;
 /// </summary>
 /// <remarks>
 /// A frameless, transparent, always-on-top window sized to the tooltip (plus room for its
-/// shadow) and placed at the icon, away from the taskbar. It's shown without activating, so
+/// shadow) and placed at the mouse, away from the taskbar. It's shown without activating, so
 /// hovering never takes focus.
 /// </remarks>
 internal sealed partial class TrayTooltipWindow : Window
