@@ -22,6 +22,8 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <SpectreMitigation>Spectre</SpectreMitigation>
       <BufferSecurityCheck>true</BufferSecurityCheck>
+      <!-- ARM64's counterpart to CET: sign return addresses with pointer authentication -->
+      <AdditionalOptions Condition="'$(Platform)' == 'ARM64'">/guard:signret %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <!-- CET shadow stacks exist only on x64 -->
