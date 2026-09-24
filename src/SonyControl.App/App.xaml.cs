@@ -28,6 +28,7 @@ public partial class App : Application, IDisposable
     private SettingsWindow? _settingsWindow;
     private TrayIcon? _trayIcon;
     private TrayMenuWindow? _trayMenu;
+    private TrayTooltipWindow? _trayTooltip;
 
     public App()
     {
@@ -112,11 +113,18 @@ public partial class App : Application, IDisposable
         _trayIcon.ContextMenuRequested += (_, point) =>
         {
             _flyoutWindow.HideFlyout();
-            var (x, y, edge) = ScreenGeometry.GetMenuAnchor(point.X, point.Y);
+            var (x, y, edge, _, _) = ScreenGeometry.GetMenuAnchor(point.X, point.Y);
             _trayMenu.ShowAt(x, y, edge);
         };
         _trayMenu.SettingsRequested += (_, _) => ShowSettings();
         _trayMenu.QuitRequested += (_, _) => Quit();
+
+        // Hover Tooltip: connected headsets and their batteries; not over the open flyout
+        _trayTooltip = new TrayTooltipWindow(_flyout);
+        _trayIcon.PopupOpening += (_, _) => ShowTrayTooltip();
+        _trayIcon.PopupClosing += (_, _) => _trayTooltip.Hide();
+        _trayIcon.Invoked += (_, _) => _trayTooltip.Hide();
+        _trayIcon.ContextMenuRequested += (_, _) => _trayTooltip.Hide();
         _trayIcon.Show();
 
         ApplyTheme(_settings.Theme);
@@ -131,6 +139,18 @@ public partial class App : Application, IDisposable
         NativeLogLevel.Error => LogLevel.Error,
         _ => LogLevel.Information,
     };
+
+    private void ShowTrayTooltip()
+    {
+        if (_trayIcon?.GetIconRect() is not { } icon || _trayTooltip is null || _flyoutWindow?.AppWindow.IsVisible == true)
+        {
+            return;
+        }
+
+        // Anchored at the icon's middle, pushed off the taskbar like the right-click menu
+        var (x, y, edge, workArea, scale) = ScreenGeometry.GetMenuAnchor((icon.Left + icon.Right) / 2, (icon.Top + icon.Bottom) / 2);
+        _trayTooltip.ShowAt(x, y, edge, workArea, scale);
+    }
 
     private void ShowSettings()
     {
@@ -157,6 +177,7 @@ public partial class App : Application, IDisposable
         _flyoutWindow?.ApplyTheme(theme);
         _settingsWindow?.ApplyTheme(theme);
         _trayMenu?.ApplyTheme(theme);
+        _trayTooltip?.ApplyTheme(theme);
     }
 
     private void OpenFolder(string folder)
@@ -175,6 +196,7 @@ public partial class App : Application, IDisposable
     {
         _trayIcon?.Dispose();
         _trayMenu?.Close();
+        _trayTooltip?.Close();
         _settingsWindow?.Close();
         _flyoutWindow?.Shutdown();
         _flyout?.Dispose();

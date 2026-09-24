@@ -13,7 +13,9 @@ namespace SonyControl.App;
 /// changes (the icon switches between its light- and dark-taskbar versions). Uses
 /// NOTIFYICON_VERSION_4, so a click or Enter arrives as NIN_SELECT/NIN_KEYSELECT and a
 /// right-click as WM_CONTEXTMENU with the anchor point in wParam. The menu itself is WinUI
-/// (<see cref="TrayMenuWindow"/>).
+/// (<see cref="TrayMenuWindow"/>). The standard text tooltip is off (no NIF_SHOWTIP), so
+/// hovering sends NIN_POPUPOPEN/NIN_POPUPCLOSE for the app's own tooltip
+/// (<see cref="TrayTooltipWindow"/>); the text stays set for screen readers.
 /// </remarks>
 internal sealed class TrayIcon : IDisposable
 {
@@ -74,11 +76,21 @@ internal sealed class TrayIcon : IDisposable
     /// </summary>
     public event EventHandler<(int X, int Y)>? ContextMenuRequested;
 
+    /// <summary>
+    /// The pointer rested on the icon; time to show the hover tooltip.
+    /// </summary>
+    public event EventHandler? PopupOpening;
+
+    /// <summary>
+    /// The pointer left the icon; the hover tooltip should go.
+    /// </summary>
+    public event EventHandler? PopupClosing;
+
     public void Show()
     {
         LoadIcon();
 
-        var data = CreateData(NativeMethods.NIF_MESSAGE | NativeMethods.NIF_ICON | NativeMethods.NIF_TIP | NativeMethods.NIF_SHOWTIP);
+        var data = CreateData(NativeMethods.NIF_MESSAGE | NativeMethods.NIF_ICON | NativeMethods.NIF_TIP);
         // Fails when Explorer isn't up yet at sign-in; TaskbarCreated adds the icon later.
         if (!NativeMethods.Shell_NotifyIconW(NativeMethods.NIM_ADD, ref data))
         {
@@ -175,6 +187,12 @@ internal sealed class TrayIcon : IDisposable
                     var x = (short)(wParam.ToInt64() & 0xFFFF);
                     var y = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
                     ContextMenuRequested?.Invoke(this, (x, y));
+                    break;
+                case NativeMethods.NIN_POPUPOPEN:
+                    PopupOpening?.Invoke(this, EventArgs.Empty);
+                    break;
+                case NativeMethods.NIN_POPUPCLOSE:
+                    PopupClosing?.Invoke(this, EventArgs.Empty);
                     break;
             }
             return IntPtr.Zero;

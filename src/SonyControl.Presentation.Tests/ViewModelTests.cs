@@ -538,6 +538,18 @@ public sealed class FlyoutViewModelTests
     }
 
     [TestMethod]
+    public async Task TrayTooltipListsOnlyConnectedHeadsets()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+        Assert.IsTrue(await TestWait.UntilAsync(() => _flyout.ConnectedHeadsets.Count == 2));
+
+        _source.Report(Xm4 with { IsConnected = false });
+
+        Assert.AreEqual("WF-1000XM6", _flyout.ConnectedHeadsets.Single().DeviceName);
+    }
+
+    [TestMethod]
     public void PickingADisconnectedHeadsetShowsItsPage()
     {
         _source.Report(Xm6);

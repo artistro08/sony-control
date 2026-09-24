@@ -39,7 +39,8 @@ public sealed partial class SettingsWindow : Window
             presenter.PreferredMinimumWidth = AppWindow.Size.Width;
             presenter.PreferredMinimumHeight = AppWindow.Size.Height;
         }
-        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Square44x44Logo.targetsize-48.png"));
+        // Taskbar and title bar icon; SetIcon only takes .ico files (a PNG leaves the blank default)
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
 
         Navigation.SelectedItem = Navigation.MenuItems[0];
         _ = _viewModel.LoadAsync();

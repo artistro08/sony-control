@@ -40,7 +40,8 @@ internal static class ScreenGeometry
     /// Where the tray menu opens for a click at a screen point: moved off the taskbar to the
     /// work area's edge plus the flyout's margin, so the menu keeps the same gap as the flyout.
     /// </summary>
-    public static (int X, int Y, TaskbarEdge Edge) GetMenuAnchor(int x, int y)
+    /// <returns>Anchor point, taskbar edge, work area, and monitor DPI divided by 96.</returns>
+    public static (int X, int Y, TaskbarEdge Edge, PixelRect WorkArea, double Scale) GetMenuAnchor(int x, int y)
     {
         var monitor = NativeMethods.MonitorFromPoint(new NativeMethods.POINT { X = x, Y = y }, NativeMethods.MONITOR_DEFAULTTONEAREST);
         var info = new NativeMethods.MONITORINFO { cbSize = (uint)Marshal.SizeOf<NativeMethods.MONITORINFO>() };
@@ -52,10 +53,10 @@ internal static class ScreenGeometry
         var edge = FlyoutPlacement.DetectEdge(ToPixelRect(info.rcMonitor), workArea);
         return edge switch
         {
-            TaskbarEdge.Top => (x, workArea.Top + margin, edge),
-            TaskbarEdge.Left => (workArea.Left + margin, y, edge),
-            TaskbarEdge.Right => (workArea.Right - margin, y, edge),
-            _ => (x, workArea.Bottom - margin, edge),
+            TaskbarEdge.Top => (x, workArea.Top + margin, edge, workArea, scale),
+            TaskbarEdge.Left => (workArea.Left + margin, y, edge, workArea, scale),
+            TaskbarEdge.Right => (workArea.Right - margin, y, edge, workArea, scale),
+            _ => (x, workArea.Bottom - margin, edge, workArea, scale),
         };
     }
 

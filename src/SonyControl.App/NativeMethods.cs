@@ -31,6 +31,8 @@ internal static class NativeMethods
     public const uint NOTIFYICON_VERSION_4 = 4;
     public const uint NIN_SELECT = 0x0400;
     public const uint NIN_KEYSELECT = 0x0401;
+    public const uint NIN_POPUPOPEN = 0x0406;
+    public const uint NIN_POPUPCLOSE = 0x0407;
 
     public const uint IMAGE_ICON = 1;
     public const uint LR_LOADFROMFILE = 0x0010;

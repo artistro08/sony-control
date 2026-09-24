@@ -1,0 +1,43 @@
+<UserControl
+    x:Class="SonyControl.App.Views.TrayTooltip"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SonyControl.App.Views"
+    xmlns:vm="using:SonyControl.Presentation.ViewModels">
+
+    <!-- Tray Tooltip: each connected headset's name over its battery row (the device page's
+         badges), in a Windows tooltip's colors -->
+    <Border
+        Padding="12,8"
+        Background="{ThemeResource ToolTipBackground}"
+        BorderBrush="{ThemeResource ToolTipBorderBrush}"
+        BorderThickness="{ThemeResource ToolTipBorderThemeThickness}"
+        CornerRadius="{ThemeResource OverlayCornerRadius}">
+        <Grid>
+
+            <!-- Headsets -->
+            <ItemsRepeater x:Name="HeadsetList">
+                <ItemsRepeater.Layout>
+                    <StackLayout Spacing="10" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HeadsetViewModel">
+                        <StackPanel Spacing="4">
+                            <TextBlock
+                                Foreground="{ThemeResource ToolTipForeground}"
+                                Style="{StaticResource BodyStrongTextBlockStyle}"
+                                Text="{x:Bind DeviceName}" />
+                            <local:BatteryRow Headset="{x:Bind}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+
+            <!-- Nothing Connected -->
+            <TextBlock
+                x:Name="EmptyText"
+                Foreground="{ThemeResource ToolTipForeground}"
+                Text="No headphones connected" />
+        </Grid>
+    </Border>
+</UserControl>

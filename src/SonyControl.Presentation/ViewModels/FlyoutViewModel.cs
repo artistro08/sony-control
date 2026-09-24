@@ -53,6 +53,12 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<HeadsetViewModel> Headsets { get; } = [];
 
+    /// <summary>
+    /// Headsets with an open control link, for the tray icon's hover tooltip. A snapshot:
+    /// read it each time the tooltip opens.
+    /// </summary>
+    public IReadOnlyList<HeadsetViewModel> ConnectedHeadsets => [.. Headsets.Where(headset => headset.IsConnected)];
+
     public HeadsetViewModel? CurrentHeadset
     {
         get => _currentHeadset;
