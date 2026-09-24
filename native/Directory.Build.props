@@ -1,0 +1,7 @@
+<Project>
+  <!-- Shared output folders for every native project -->
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\bin\native\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\obj\native\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+</Project>

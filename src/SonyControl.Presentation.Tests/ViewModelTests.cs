@@ -1,0 +1,643 @@
+using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using SonyControl.Presentation.Devices;
+using SonyControl.Presentation.Headsets;
+using SonyControl.Presentation.Logging;
+using SonyControl.Presentation.Navigation;
+using SonyControl.Presentation.Notifications;
+using SonyControl.Presentation.Scenes;
+using SonyControl.Presentation.Settings;
+using SonyControl.Presentation.Tests.Fakes;
+using SonyControl.Presentation.ViewModels;
+
+namespace SonyControl.Presentation.Tests;
+
+[TestClass]
+public sealed class HeadsetViewModelTests
+{
+    private readonly FakeTimeProvider _time = new();
+    private readonly FakeHeadset _headset = new();
+    private readonly FakeNotificationService _notifications = new();
+    private readonly AppSettings _settings = new(new InMemorySettingsStore());
+    private HeadsetViewModel _viewModel = null!;
+
+    [TestInitialize]
+    public void CreateViewModel()
+    {
+        var managed = new ManagedHeadset("device-xm6", "AC:80:0A:00:00:06", "WF-1000XM6", _headset)
+        {
+            ConnectionState = HeadsetConnectionState.Connected,
+        };
+        _viewModel = new HeadsetViewModel(managed, _settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
+    }
+
+    [TestCleanup]
+    public void DisposeViewModel() => _viewModel.Dispose();
+
+    [TestMethod]
+    public void ShowsHeadsetState()
+    {
+        Assert.IsTrue(_viewModel.IsAmbient);
+        Assert.AreEqual(8, _viewModel.AmbientLevel);
+        Assert.IsTrue(_viewModel.FocusOnVoice);
+        Assert.IsTrue(_viewModel.ShowDualBattery);
+        Assert.AreEqual("85%", _viewModel.LeftBatteryText);
+        Assert.AreEqual("82%", _viewModel.RightBatteryText);
+        Assert.AreEqual("95%", _viewModel.CaseBatteryText);
+        Assert.AreEqual("Connected \u00b7 LDAC", _viewModel.StatusText);
+    }
+
+    [TestMethod]
+    public void MissingEarbudHidesItsBatteryAndDoesNotAlert()
+    {
+        _settings.LowBatteryNotifications = true;
+
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(null, null, 80, 90, false) });
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.IsTrue(_viewModel.ShowDualBattery);
+        Assert.IsFalse(_viewModel.ShowLeftBattery);
+        Assert.IsTrue(_viewModel.ShowRightBattery);
+        Assert.AreEqual(0, _notifications.Shown.Count);
+    }
+
+    [TestMethod]
+    public void MissingEarbudIsPolledUntilItComesBack()
+    {
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(null, 85, null, 90, false) });
+        var before = _headset.Commands.Count(command => Equals(command, "battery"));
+
+        _time.Advance(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(before + 1, _headset.Commands.Count(command => Equals(command, "battery")));
+
+        // Right earbud back: polling stops
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(null, 85, 80, 90, false) });
+        _time.Advance(TimeSpan.FromSeconds(15));
+        Assert.AreEqual(before + 1, _headset.Commands.Count(command => Equals(command, "battery")));
+    }
+
+    [TestMethod]
+    public void MomentaryNoEarbudsKeepsLastLevels()
+    {
+        // Taking an earbud out briefly reports neither side before the real levels follow
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(null, null, null, 90, false) });
+
+        Assert.IsTrue(_viewModel.ShowLeftBattery);
+        Assert.AreEqual("85%", _viewModel.LeftBatteryText);
+        Assert.AreEqual("82%", _viewModel.RightBatteryText);
+        Assert.AreEqual("90%", _viewModel.CaseBatteryText);
+    }
+
+    [TestMethod]
+    public void CaseKeepsLastKnownLevelAcrossRestarts()
+    {
+        // The case only reports while an earbud sits in it; show what it last said, like Sony's app
+        Assert.AreEqual("95%", _viewModel.CaseBatteryText);
+        _viewModel.Dispose();
+
+        var restarted = new FakeHeadset();
+        restarted.RaiseStateChanged(restarted.State with { Battery = new BatteryLevels(null, 70, null, null, false) });
+        var managed = new ManagedHeadset("device-xm6", "AC:80:0A:00:00:06", "WF-1000XM6", restarted) { ConnectionState = HeadsetConnectionState.Connected };
+        _viewModel = new HeadsetViewModel(managed, _settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
+
+        Assert.IsTrue(_viewModel.ShowCaseBattery);
+        Assert.AreEqual("95%", _viewModel.CaseBatteryText);
+    }
+
+    [TestMethod]
+    public void AudioTextShowsCodecAndDseeWhenOn()
+    {
+        Assert.AreEqual("LDAC", _viewModel.AudioText);
+
+        _viewModel.DseeIndex = 1;
+
+        Assert.AreEqual("LDAC · DSEE Extreme", _viewModel.AudioText);
+    }
+
+    [TestMethod]
+    public void StatusLineShowsOnlyWhenNotConnected()
+    {
+        Assert.IsFalse(_viewModel.ShowStatus);
+
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Connecting);
+
+        Assert.IsTrue(_viewModel.ShowStatus);
+    }
+
+    [TestMethod]
+    public void NoiseModeTileSendsCommand()
+    {
+        _viewModel.SetNoiseModeCommand.Execute("NoiseCancelling");
+
+        Assert.IsTrue(_viewModel.IsNoiseCancelling);
+        Assert.AreEqual(new NoiseControlSetting(NoiseMode.NoiseCancelling, 8, true), _headset.Commands.Single());
+    }
+
+    [TestMethod]
+    public void SameNoiseModeSendsNothing()
+    {
+        _viewModel.SetNoiseModeCommand.Execute("Ambient");
+
+        Assert.AreEqual(0, _headset.Commands.Count);
+    }
+
+    [TestMethod]
+    public void FailedCommandRevertsAndShowsErrorForFiveSeconds()
+    {
+        _headset.FailNextCommandWith = new COMException("timeout", HeadsetErrorMessages.TimeoutHResult);
+
+        _viewModel.SetNoiseModeCommand.Execute("Off");
+
+        Assert.IsTrue(_viewModel.IsAmbient);
+        Assert.AreEqual("Your headphones didn't respond. Try again.", _viewModel.ErrorMessage);
+        Assert.IsTrue(_viewModel.HasError);
+
+        _time.Advance(TimeSpan.FromSeconds(5));
+        Assert.IsNull(_viewModel.ErrorMessage);
+    }
+
+    [TestMethod]
+    public void AmbientSliderIsThrottledAndSendsFinalValue()
+    {
+        _viewModel.AmbientLevel = 9;
+        _viewModel.AmbientLevel = 10;
+        _viewModel.AmbientLevel = 11;
+        _viewModel.AmbientLevel = 12;
+
+        Assert.AreEqual(1, _headset.Commands.Count);
+        _time.Advance(HeadsetViewModel.SliderInterval);
+
+        CollectionAssert.AreEqual(
+            new object[] { new NoiseControlSetting(NoiseMode.Ambient, 9, true), new NoiseControlSetting(NoiseMode.Ambient, 12, true) },
+            _headset.Commands);
+    }
+
+    [TestMethod]
+    public void EchoOfOlderLevelDoesNotMoveSliderWhileCommandsAreInFlight()
+    {
+        _headset.HoldCommands = true;
+        _viewModel.AmbientLevel = 9;
+        _viewModel.AmbientLevel = 12;
+        _time.Advance(HeadsetViewModel.SliderInterval);
+
+        _headset.RaiseEcho(_headset.State with { NoiseControl = new NoiseControlSetting(NoiseMode.Ambient, 9, true) });
+        Assert.AreEqual(12, _viewModel.AmbientLevel);
+
+        _headset.CompleteHeldCommands();
+        Assert.AreEqual(12, _viewModel.AmbientLevel);
+    }
+
+    [TestMethod]
+    public void ReconnectIsDisabledWhileConnecting()
+    {
+        Assert.IsTrue(_viewModel.CanReconnect);
+
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Connecting);
+
+        Assert.IsFalse(_viewModel.CanReconnect);
+    }
+
+    [TestMethod]
+    public void AmbientSliderClampsAndRounds()
+    {
+        _viewModel.AmbientLevel = 25.4;
+        Assert.AreEqual(20, _viewModel.AmbientLevel);
+
+        _viewModel.AmbientLevel = 0.2;
+        Assert.AreEqual(1, _viewModel.AmbientLevel);
+    }
+
+    [TestMethod]
+    public void NotificationUpdatesControlsWithoutSendingCommands()
+    {
+        _headset.RaiseStateChanged(_headset.State with { NoiseControl = new NoiseControlSetting(NoiseMode.NoiseCancelling, 0, false) });
+
+        Assert.IsTrue(_viewModel.IsNoiseCancelling);
+        Assert.IsFalse(_viewModel.FocusOnVoice);
+        Assert.AreEqual(8, _viewModel.AmbientLevel);
+        Assert.AreEqual(0, _headset.Commands.Count);
+    }
+
+    [TestMethod]
+    public void SceneSendsOneCommand()
+    {
+        _viewModel.ApplySceneCommand.Execute(new Scene("Aware", "\uE805", new NoiseControlSetting(NoiseMode.Ambient, 20, false)));
+
+        Assert.AreEqual(new NoiseControlSetting(NoiseMode.Ambient, 20, false), _headset.Commands.Single());
+        Assert.AreEqual(20, _viewModel.AmbientLevel);
+        Assert.IsFalse(_viewModel.FocusOnVoice);
+    }
+
+    [TestMethod]
+    public void NoSceneIsActiveWhenNoneMatches()
+    {
+        // Headset starts in ambient 8 with voice on; defaults are Focus (NC), Office (ambient 10, voice), Aware (ambient 20).
+        Assert.IsFalse(_viewModel.SceneItems.Any(item => item.IsActive));
+    }
+
+    [TestMethod]
+    public void AppliedSceneBecomesActive()
+    {
+        var aware = _viewModel.SceneItems.Single(item => item.Name == "Aware");
+
+        _viewModel.ApplySceneCommand.Execute(aware.Scene);
+
+        Assert.IsTrue(aware.IsActive);
+        Assert.AreEqual(1, _viewModel.SceneItems.Count(item => item.IsActive));
+    }
+
+    [TestMethod]
+    public void SceneFollowsManualChanges()
+    {
+        _viewModel.SetNoiseModeCommand.Execute("NoiseCancelling");
+        Assert.IsTrue(_viewModel.SceneItems.Single(item => item.Name == "Focus").IsActive);
+
+        _viewModel.SetNoiseModeCommand.Execute("Ambient");
+        _time.Advance(HeadsetViewModel.SliderInterval);
+        _viewModel.AmbientLevel = 10;
+        Assert.IsTrue(_viewModel.SceneItems.Single(item => item.Name == "Office").IsActive);
+
+        _viewModel.FocusOnVoice = false;
+        Assert.IsFalse(_viewModel.SceneItems.Any(item => item.IsActive));
+    }
+
+    [TestMethod]
+    public void HeadsetNotificationUpdatesActiveScene()
+    {
+        _headset.RaiseStateChanged(_headset.State with { NoiseControl = new NoiseControlSetting(NoiseMode.Ambient, 20, false) });
+
+        Assert.IsTrue(_viewModel.SceneItems.Single(item => item.Name == "Aware").IsActive);
+    }
+
+    [TestMethod]
+    public void EqualizerPickSendsPresetValue()
+    {
+        _viewModel.SelectedEqualizerIndex = 2;
+
+        Assert.AreEqual(0x16, _headset.Commands.Single());
+    }
+
+    [TestMethod]
+    public async Task CustomEqualizerSendsManualCurve()
+    {
+        _viewModel.ClearBass = 3;
+        _viewModel.Band1 = -10;
+        _viewModel.Band5 = 10;
+
+        await _viewModel.ApplyCustomEqualizerCommand.ExecuteAsync(null);
+
+        var sent = (EqualizerSetting)_headset.Commands.Single();
+        Assert.AreEqual(EqualizerSetting.ManualPreset, sent.Preset);
+        Assert.AreEqual(3, sent.ClearBass);
+        CollectionAssert.AreEqual(new[] { -10, 0, 0, 0, 10 }, sent.Bands.ToArray());
+    }
+
+    [TestMethod]
+    public void SystemSettingsSendCommands()
+    {
+        _viewModel.DseeIndex = 1;
+        _viewModel.SpeakToChat = true;
+        _viewModel.AdaptiveVolume = true;
+        _viewModel.AutoPowerOffIndex = 5;
+
+        CollectionAssert.AreEqual(
+            new object[] { ("dsee", true), ("speakToChat", true), ("adaptiveVolume", true), ("autoPowerOff", 5) },
+            _headset.Commands);
+    }
+
+    [TestMethod]
+    public void ConnectionStateChangesStatusText()
+    {
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Connecting);
+        Assert.AreEqual("Connecting\u2026", _viewModel.StatusText);
+        Assert.IsTrue(_viewModel.IsConnecting);
+        Assert.IsFalse(_viewModel.IsConnected);
+
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+        Assert.AreEqual("Disconnected", _viewModel.StatusText);
+    }
+
+    [TestMethod]
+    public void TurningAutoConnectOffSavesAndRaisesEvent()
+    {
+        var raised = false;
+        _viewModel.AutoConnectChanged += (_, _) => raised = true;
+
+        _viewModel.AutoConnect = false;
+
+        Assert.IsTrue(raised);
+        Assert.IsFalse(_settings.IsAutoConnectEnabled("AC:80:0A:00:00:06"));
+    }
+
+    [TestMethod]
+    public void LowBatteryNotifiesOnce()
+    {
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(15, 15, 40, 90, false) });
+        _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(14, 14, 40, 90, false) });
+
+        Assert.AreEqual(("WF-1000XM6", 15), _notifications.Shown.Single());
+    }
+}
+
+[TestClass]
+public sealed class LowBatteryMonitorTests
+{
+    private readonly FakeNotificationService _notifications = new();
+    private readonly AppSettings _settings = new(new InMemorySettingsStore());
+
+    [TestMethod]
+    public void RearmsAfterRecovering()
+    {
+        var monitor = new LowBatteryMonitor(_settings, _notifications);
+
+        monitor.Update("A", "XM4", new BatteryLevels(19, null, null, null, false));
+        monitor.Update("A", "XM4", new BatteryLevels(25, null, null, null, false));
+        monitor.Update("A", "XM4", new BatteryLevels(18, null, null, null, false));
+
+        Assert.AreEqual(2, _notifications.Shown.Count);
+    }
+
+    [TestMethod]
+    public void StaysQuietWhileCharging()
+    {
+        var monitor = new LowBatteryMonitor(_settings, _notifications);
+
+        monitor.Update("A", "XM4", new BatteryLevels(10, null, null, null, true));
+
+        Assert.AreEqual(0, _notifications.Shown.Count);
+    }
+
+    [TestMethod]
+    public void StaysQuietWhenTurnedOff()
+    {
+        _settings.LowBatteryNotifications = false;
+        var monitor = new LowBatteryMonitor(_settings, _notifications);
+
+        monitor.Update("A", "XM4", new BatteryLevels(10, null, null, null, false));
+
+        Assert.AreEqual(0, _notifications.Shown.Count);
+    }
+}
+
+[TestClass]
+public sealed class FlyoutViewModelTests
+{
+    private static readonly BluetoothDeviceInfo Xm6 = new("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true);
+    private static readonly BluetoothDeviceInfo Xm4 = new("device-xm4", "WH-1000XM4", "ac:80:0a:00:00:04", true);
+
+    private readonly FakeDeviceSource _source = new();
+    private readonly FakeTimeProvider _time = new();
+    private readonly AppSettings _settings = new(new InMemorySettingsStore());
+    private HeadsetManager _manager = null!;
+    private FlyoutViewModel _flyout = null!;
+
+    [TestInitialize]
+    public void CreateFlyout()
+    {
+        _manager = new HeadsetManager(_source, name => new FakeHeadset(name), _settings, _time, NullLogger<HeadsetManager>.Instance);
+        var monitor = new LowBatteryMonitor(_settings, new FakeNotificationService());
+        _flyout = new FlyoutViewModel(
+            _manager,
+            new FlyoutNavigator(_settings),
+            managed => new HeadsetViewModel(managed, _settings, monitor, _time, NullLogger.Instance));
+        _manager.Start();
+    }
+
+    [TestCleanup]
+    public void DisposeFlyout()
+    {
+        _flyout.Dispose();
+        _manager.Dispose();
+    }
+
+    [TestMethod]
+    public void StartsOnEmptyPage()
+    {
+        Assert.IsTrue(_flyout.IsEmptyVisible);
+        Assert.IsNull(_flyout.CurrentHeadset);
+    }
+
+    [TestMethod]
+    public void OneHeadsetOpensItsPageWithoutBack()
+    {
+        _source.Report(Xm6);
+
+        Assert.IsTrue(_flyout.IsDeviceVisible);
+        Assert.IsFalse(_flyout.ShowBack);
+        Assert.AreEqual("WF-1000XM6", _flyout.CurrentHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void SecondHeadsetShowsPicker()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+
+        Assert.IsTrue(_flyout.IsPickerVisible);
+        Assert.AreEqual(2, _flyout.Headsets.Count);
+    }
+
+    [TestMethod]
+    public void PickThenBack()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+
+        _flyout.PickCommand.Execute(_flyout.Headsets[1]);
+        Assert.IsTrue(_flyout.IsDeviceVisible);
+        Assert.IsTrue(_flyout.ShowBack);
+        Assert.AreEqual("WH-1000XM4", _flyout.CurrentHeadset?.DeviceName);
+
+        _flyout.BackCommand.Execute(null);
+        Assert.IsTrue(_flyout.IsPickerVisible);
+    }
+
+    [TestMethod]
+    public void KnowsWhetherADefaultHeadsetIsSet()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+        Assert.IsFalse(_flyout.HasDefaultHeadset);
+
+        _flyout.PickCommand.Execute(_flyout.Headsets[0]);
+        Assert.IsTrue(_flyout.HasDefaultHeadset);
+
+        _flyout.BackCommand.Execute(null);
+        Assert.IsFalse(_flyout.HasDefaultHeadset);
+    }
+
+    [TestMethod]
+    public void RememberedHeadsetLeavingAndReturning()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+        _flyout.PickCommand.Execute(_flyout.Headsets[0]);
+
+        _source.Report(Xm6 with { IsConnected = false });
+        Assert.AreEqual("WH-1000XM4", _flyout.CurrentHeadset?.DeviceName);
+        Assert.IsFalse(_flyout.ShowBack);
+
+        _source.Report(Xm6);
+        Assert.AreEqual("WF-1000XM6", _flyout.CurrentHeadset?.DeviceName);
+        Assert.IsTrue(_flyout.ShowBack);
+    }
+
+    [TestMethod]
+    public void SettingsAndQuitRaiseEvents()
+    {
+        var settings = 0;
+        var quit = 0;
+        _flyout.SettingsRequested += (_, _) => settings++;
+        _flyout.QuitRequested += (_, _) => quit++;
+
+        _flyout.OpenSettingsCommand.Execute(null);
+        _flyout.QuitCommand.Execute(null);
+
+        Assert.AreEqual(1, settings);
+        Assert.AreEqual(1, quit);
+    }
+}
+
+[TestClass]
+public sealed class SettingsViewModelTests
+{
+    private readonly FakeDeviceSource _source = new();
+    private readonly AppSettings _settings = new(new InMemorySettingsStore());
+    private readonly FakeStartupTaskService _startup = new();
+    private readonly LogLevelSwitch _logLevel = new();
+    private readonly List<AppTheme> _themes = [];
+    private readonly List<bool> _nativeDebug = [];
+    private HeadsetManager _manager = null!;
+    private FlyoutViewModel _flyout = null!;
+    private SettingsViewModel _viewModel = null!;
+
+    [TestInitialize]
+    public void CreateViewModel()
+    {
+        var time = new FakeTimeProvider();
+        _manager = new HeadsetManager(_source, name => new FakeHeadset(name), _settings, time, NullLogger<HeadsetManager>.Instance);
+        var monitor = new LowBatteryMonitor(_settings, new FakeNotificationService());
+        _flyout = new FlyoutViewModel(
+            _manager,
+            new FlyoutNavigator(_settings),
+            managed => new HeadsetViewModel(managed, _settings, monitor, time, NullLogger.Instance));
+        _viewModel = new SettingsViewModel(_flyout, _settings, _logLevel, _startup, _themes.Add, _nativeDebug.Add, _ => { }, "C:\\Logs", NullLogger.Instance);
+        _manager.Start();
+    }
+
+    [TestCleanup]
+    public void Dispose()
+    {
+        _flyout.Dispose();
+        _manager.Dispose();
+    }
+
+    [TestMethod]
+    public void SelectsFirstHeadsetWhenOneConnects()
+    {
+        Assert.IsTrue(_viewModel.NoHeadset);
+
+        _source.Report(new BluetoothDeviceInfo("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true));
+
+        Assert.AreEqual(0, _viewModel.SelectedHeadsetIndex);
+        Assert.AreEqual("WF-1000XM6", _viewModel.SelectedHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void SelectionChangesOnlyAfterEveryListenerSawTheNewHeadset()
+    {
+        // A ComboBox bound to Headsets subscribes after the view model. Setting
+        // SelectedIndex before it has the new item throws ArgumentException in WinUI.
+        var previous = SynchronizationContext.Current;
+        var context = new QueueingSynchronizationContext();
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            var time = new FakeTimeProvider();
+            var settings = new AppSettings(new InMemorySettingsStore());
+            var source = new FakeDeviceSource();
+            using var manager = new HeadsetManager(source, name => new FakeHeadset(name), settings, time, NullLogger<HeadsetManager>.Instance);
+            var monitor = new LowBatteryMonitor(settings, new FakeNotificationService());
+            using var flyout = new FlyoutViewModel(
+                manager,
+                new FlyoutNavigator(settings),
+                managed => new HeadsetViewModel(managed, settings, monitor, time, NullLogger.Instance));
+            var viewModel = new SettingsViewModel(flyout, settings, new LogLevelSwitch(), new FakeStartupTaskService(), _ => { }, _ => { }, _ => { }, "C:\\Logs", NullLogger.Instance);
+            manager.Start();
+
+            var controlItems = 0;
+            flyout.Headsets.CollectionChanged += (_, _) => controlItems = flyout.Headsets.Count;
+            var itemsWhenSelected = -1;
+            viewModel.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingsViewModel.SelectedHeadsetIndex))
+                {
+                    itemsWhenSelected = controlItems;
+                }
+            };
+
+            source.Report(new BluetoothDeviceInfo("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true));
+            context.RunPending();
+
+            Assert.AreEqual(0, viewModel.SelectedHeadsetIndex);
+            Assert.AreEqual(1, itemsWhenSelected, "SelectedHeadsetIndex changed before the list control had the headset");
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+    }
+
+    [TestMethod]
+    public void ThemeChoiceIsSavedAndApplied()
+    {
+        _viewModel.ThemeIndex = (int)AppTheme.Dark;
+
+        Assert.AreEqual(AppTheme.Dark, _settings.Theme);
+        CollectionAssert.AreEqual(new[] { AppTheme.Dark }, _themes);
+    }
+
+    [TestMethod]
+    public void DebugLoggingSwitchesBothLoggers()
+    {
+        _viewModel.DebugLogging = true;
+
+        Assert.AreEqual(Microsoft.Extensions.Logging.LogLevel.Debug, _logLevel.MinimumLevel);
+        CollectionAssert.AreEqual(new[] { true }, _nativeDebug);
+    }
+
+    [TestMethod]
+    public async Task LaunchAtSignInReflectsWhatWindowsAllowed()
+    {
+        _startup.RefuseEnable = true;
+        await _viewModel.LoadAsync();
+
+        _viewModel.LaunchAtSignIn = true;
+
+        Assert.IsTrue(await TestWait.UntilAsync(() => !_viewModel.LaunchAtSignIn));
+    }
+
+    [TestMethod]
+    public void SavingScenesStoresEdits()
+    {
+        _viewModel.Scenes[0].Name = "Deep work";
+        _viewModel.Scenes[0].ModeIndex = (int)NoiseMode.Ambient;
+        _viewModel.Scenes[0].AmbientLevel = 5;
+
+        _viewModel.SaveScenesCommand.Execute(null);
+
+        Assert.AreEqual(new Scene("Deep work", "\uE708", new NoiseControlSetting(NoiseMode.Ambient, 5, false)), _settings.Scenes[0]);
+    }
+
+    [TestMethod]
+    public void ResettingScenesRestoresDefaults()
+    {
+        _viewModel.Scenes[0].Name = "Changed";
+        _viewModel.SaveScenesCommand.Execute(null);
+
+        _viewModel.ResetScenesCommand.Execute(null);
+
+        CollectionAssert.AreEqual(Scene.Defaults.ToList(), _settings.Scenes.ToList());
+    }
+}

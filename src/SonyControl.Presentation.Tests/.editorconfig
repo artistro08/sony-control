@@ -1,0 +1,15 @@
+[*.cs]
+# Test fixtures dispose in [TestCleanup], which CA1001 can't see
+dotnet_diagnostic.CA1001.severity = none
+
+# Inline expected arrays read better in assertions
+dotnet_diagnostic.CA1861.severity = none
+
+# Tests call ILogger directly to exercise the file logger
+dotnet_diagnostic.CA1848.severity = none
+
+# Tests throw COMException to stand in for native HRESULT failures
+dotnet_diagnostic.CA2201.severity = none
+
+# .NET 10: tests pass arguments straight to ILogger on purpose
+dotnet_diagnostic.CA1873.severity = none

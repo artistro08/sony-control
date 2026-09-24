@@ -1,0 +1,338 @@
+using Microsoft.Extensions.Logging;
+using SonyControl.Presentation.Headsets;
+using SonyControl.Presentation.Logging;
+using SonyControl.Presentation.Settings;
+
+namespace SonyControl.Presentation.Devices;
+
+/// <summary>
+/// Tracks the Sony headsets Windows reports as connected and keeps a control link open to each.
+/// </summary>
+/// <remarks>
+/// A headset joins the list when Windows connects it and leaves when Windows disconnects or
+/// unpairs it. While it's listed, the control link is (re)opened on a schedule of 0 s, 1 s, 2 s,
+/// 5 s, then every 30 s until it succeeds. A link that drops while Windows still reports the
+/// headset connected restarts that schedule at 1 s. Headsets with auto-connect turned off stay
+/// listed but only connect when <see cref="Reconnect"/> is called.
+/// </remarks>
+public sealed class HeadsetManager : IDisposable
+{
+    private static readonly TimeSpan[] ConnectDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+    ];
+
+    private static readonly TimeSpan SteadyConnectDelay = TimeSpan.FromSeconds(30);
+
+    private readonly IBluetoothDeviceSource _source;
+    private readonly Func<string, IHeadset> _createHeadset;
+    private readonly AppSettings _settings;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<HeadsetManager> _logger;
+
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, ManagedHeadset> _headsets = [];
+    private bool _disposed;
+
+    /// <param name="source">Paired Bluetooth devices from Windows.</param>
+    /// <param name="createHeadset">Creates the control link for a device name.</param>
+    /// <param name="settings">Auto-connect choices and the headsets already known to be Sony.</param>
+    /// <param name="timeProvider">Clock for the reconnect schedule.</param>
+    /// <param name="logger">Logger.</param>
+    public HeadsetManager(
+        IBluetoothDeviceSource source,
+        Func<string, IHeadset> createHeadset,
+        AppSettings settings,
+        TimeProvider timeProvider,
+        ILogger<HeadsetManager> logger)
+    {
+        _source = source;
+        _createHeadset = createHeadset;
+        _settings = settings;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    public event EventHandler<ManagedHeadset>? HeadsetAdded;
+
+    public event EventHandler<ManagedHeadset>? HeadsetRemoved;
+
+    public event EventHandler<ManagedHeadset>? ConnectionStateChanged;
+
+    public IReadOnlyList<ManagedHeadset> Headsets
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _headsets.Values];
+            }
+        }
+    }
+
+    public void Start()
+    {
+        _source.DeviceChanged += OnDeviceChanged;
+        _source.DeviceRemoved += OnDeviceRemoved;
+        _source.StartWatching();
+    }
+
+    /// <summary>
+    /// Drops the current link and connects again right away.
+    /// </summary>
+    public void Reconnect(string id)
+    {
+        var headset = Find(id);
+        if (headset is null)
+        {
+            return;
+        }
+
+        LogMessages.Reconnecting(_logger, headset.Name);
+        headset.Headset.Disconnect();
+        StartConnectLoop(headset, 0);
+    }
+
+    /// <summary>
+    /// Applies a changed auto-connect setting to a listed headset.
+    /// </summary>
+    public void ApplyAutoConnect(string id)
+    {
+        var headset = Find(id);
+        if (headset is null)
+        {
+            return;
+        }
+
+        if (_settings.IsAutoConnectEnabled(id))
+        {
+            if (headset.ConnectionState == HeadsetConnectionState.Disconnected)
+            {
+                StartConnectLoop(headset, 0);
+            }
+            return;
+        }
+
+        CancelConnectLoop(headset);
+        headset.Headset.Disconnect();
+        SetState(headset, HeadsetConnectionState.Disconnected);
+    }
+
+    public void Dispose()
+    {
+        List<ManagedHeadset> headsets;
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            headsets = [.. _headsets.Values];
+            _headsets.Clear();
+        }
+
+        _source.DeviceChanged -= OnDeviceChanged;
+        _source.DeviceRemoved -= OnDeviceRemoved;
+        _source.StopWatching();
+
+        foreach (var headset in headsets)
+        {
+            CancelConnectLoop(headset);
+            headset.Headset.Dispose();
+        }
+    }
+
+    private static string NormalizeAddress(string address) => address.Trim().ToUpperInvariant();
+
+    private ManagedHeadset? Find(string id)
+    {
+        lock (_gate)
+        {
+            return _headsets.Values.FirstOrDefault(headset => headset.Id == id);
+        }
+    }
+
+    private void OnDeviceChanged(object? sender, BluetoothDeviceInfo device)
+    {
+        if (string.IsNullOrWhiteSpace(device.Address))
+        {
+            return;
+        }
+
+        // A headset first seen under its Sony name is remembered by address, so it keeps
+        // working (and keeps its model) after it's renamed in Windows.
+        var id = NormalizeAddress(device.Address);
+        var model = _settings.GetKnownHeadsetName(id);
+        if (model is null)
+        {
+            if (!SonyDeviceNameFilter.IsSony(device.Name))
+            {
+                return;
+            }
+            model = device.Name;
+            _settings.SetKnownHeadsetName(id, model);
+        }
+
+        if (device.IsConnected)
+        {
+            Track(device, model);
+        }
+        else
+        {
+            Untrack(device.Id);
+        }
+    }
+
+    private void OnDeviceRemoved(object? sender, string deviceId) => Untrack(deviceId);
+
+    private void Track(BluetoothDeviceInfo device, string model)
+    {
+        ManagedHeadset headset;
+        lock (_gate)
+        {
+            if (_disposed || _headsets.ContainsKey(device.Id))
+            {
+                return;
+            }
+            headset = new ManagedHeadset(device.Id, NormalizeAddress(device.Address), device.Name, _createHeadset(model));
+            _headsets[device.Id] = headset;
+        }
+
+        headset.Headset.Disconnected += (_, _) => OnLinkDropped(headset);
+        LogMessages.WindowsConnected(_logger, headset.Name, headset.Id);
+        HeadsetAdded?.Invoke(this, headset);
+
+        if (_settings.IsAutoConnectEnabled(headset.Id))
+        {
+            StartConnectLoop(headset, 0);
+        }
+    }
+
+    private void Untrack(string deviceId)
+    {
+        ManagedHeadset? headset;
+        lock (_gate)
+        {
+            if (!_headsets.Remove(deviceId, out headset))
+            {
+                return;
+            }
+        }
+
+        LogMessages.WindowsDisconnected(_logger, headset.Name);
+        CancelConnectLoop(headset);
+        headset.Headset.Dispose();
+        HeadsetRemoved?.Invoke(this, headset);
+    }
+
+    private void OnLinkDropped(ManagedHeadset headset)
+    {
+        lock (_gate)
+        {
+            if (!_headsets.ContainsKey(headset.DeviceId))
+            {
+                return;
+            }
+        }
+
+        LogMessages.LinkDropped(_logger, headset.Name);
+        SetState(headset, HeadsetConnectionState.Disconnected);
+        if (_settings.IsAutoConnectEnabled(headset.Id))
+        {
+            StartConnectLoop(headset, 1);
+        }
+    }
+
+    private void StartConnectLoop(ManagedHeadset headset, int firstDelayIndex)
+    {
+        var cancellation = new CancellationTokenSource();
+        CancellationTokenSource? previous;
+        Task? previousTask;
+        lock (_gate)
+        {
+            previous = headset.ConnectLoop;
+            previousTask = headset.ConnectTask;
+            headset.ConnectLoop = cancellation;
+        }
+        previous?.Cancel();
+        previous?.Dispose();
+
+        var task = ConnectLoopAsync(headset, firstDelayIndex, previousTask, cancellation.Token);
+        lock (_gate)
+        {
+            headset.ConnectTask = task;
+        }
+    }
+
+    private void CancelConnectLoop(ManagedHeadset headset)
+    {
+        CancellationTokenSource? loop;
+        lock (_gate)
+        {
+            loop = headset.ConnectLoop;
+            headset.ConnectLoop = null;
+        }
+        loop?.Cancel();
+        loop?.Dispose();
+    }
+
+    private async Task ConnectLoopAsync(ManagedHeadset headset, int delayIndex, Task? previousLoop, CancellationToken cancellationToken)
+    {
+        // Never run two connects on one headset: let a cancelled loop's in-flight connect finish first.
+        if (previousLoop is not null)
+        {
+            await previousLoop.ConfigureAwait(false);
+        }
+
+        try
+        {
+            while (true)
+            {
+                var delay = delayIndex < ConnectDelays.Length ? ConnectDelays[delayIndex] : SteadyConnectDelay;
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+
+                SetState(headset, HeadsetConnectionState.Connecting);
+                try
+                {
+                    await headset.Headset.ConnectAsync(headset.Id).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    SetState(headset, HeadsetConnectionState.Connected);
+                    LogMessages.LinkOpen(_logger, headset.Name);
+                    return;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    LogMessages.ConnectFailed(_logger, ex, headset.Name, delayIndex + 1);
+                    SetState(headset, HeadsetConnectionState.Disconnected);
+                }
+
+                delayIndex++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The headset was disconnected, unpaired or reconnected manually.
+        }
+    }
+
+    private void SetState(ManagedHeadset headset, HeadsetConnectionState state)
+    {
+        lock (_gate)
+        {
+            if (headset.ConnectionState == state)
+            {
+                return;
+            }
+            headset.ConnectionState = state;
+        }
+        ConnectionStateChanged?.Invoke(this, headset);
+    }
+}

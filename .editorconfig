@@ -1,0 +1,54 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{csproj,vcxproj,props,targets,config,appxmanifest,manifest,json,yml,yaml}]
+indent_size = 2
+
+[*.{xaml,xml}]
+indent_size = 4
+
+# =========================================================================
+# C# (Microsoft .NET coding conventions)
+# =========================================================================
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = true:warning
+csharp_new_line_before_open_brace = all
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+
+# Private fields are _camelCase
+dotnet_naming_rule.private_fields_are_underscore_camel.symbols = private_fields
+dotnet_naming_rule.private_fields_are_underscore_camel.style = underscore_camel
+dotnet_naming_rule.private_fields_are_underscore_camel.severity = suggestion
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# NativeMethods mirrors Win32 names (WM_APP, NOTIFYICONDATAW) on purpose
+[**/NativeMethods.cs]
+dotnet_diagnostic.CA1707.severity = none
+
+# =========================================================================
+# C++ (C++ Core Guidelines; formatting only, analysis runs in the build)
+# =========================================================================
+
+[*.{cpp,h,idl}]
+cpp_indent_braces = false
+cpp_new_line_before_open_brace_namespace = same_line
+cpp_new_line_before_open_brace_function = same_line
+cpp_new_line_before_open_brace_block = same_line

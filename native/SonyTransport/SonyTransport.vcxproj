@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{3B7A1F10-1C2D-4E5F-8A90-0B1C2D3E4F01}</ProjectGuid>
+    <RootNamespace>SonyTransport</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClInclude Include="include\sony\transport\BluetoothAddress.h" />
+    <ClInclude Include="include\sony\transport\DeviceAddress.h" />
+    <ClInclude Include="include\sony\transport\DiscoveredDevice.h" />
+    <ClInclude Include="include\sony\transport\FakeTransport.h" />
+    <ClInclude Include="include\sony\transport\IDeviceDiscovery.h" />
+    <ClInclude Include="include\sony\transport\ITransport.h" />
+    <ClInclude Include="include\sony\transport\Logger.h" />
+    <ClInclude Include="include\sony\transport\SonyError.h" />
+    <ClInclude Include="include\sony\transport\WindowsRfcommTransport.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="src\BluetoothAddress.cpp" />
+    <ClCompile Include="src\FakeTransport.cpp" />
+    <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\WindowsRfcommTransport.cpp" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

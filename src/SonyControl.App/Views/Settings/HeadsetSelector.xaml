@@ -1,0 +1,22 @@
+<UserControl
+    x:Class="SonyControl.App.Views.Settings.HeadsetSelector"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Headset Picker -->
+    <StackPanel Margin="0,0,0,16" Spacing="8">
+        <ComboBox
+            MinWidth="240"
+            AutomationProperties.Name="Headphones"
+            DisplayMemberPath="DeviceName"
+            Header="Headphones"
+            ItemsSource="{x:Bind ViewModel.Headsets, Mode=OneWay}"
+            SelectedIndex="{x:Bind ViewModel.SelectedHeadsetIndex, Mode=TwoWay}"
+            Visibility="{x:Bind ViewModel.HasHeadset, Mode=OneWay}" />
+        <InfoBar
+            IsClosable="False"
+            IsOpen="{x:Bind ViewModel.NoHeadset, Mode=OneWay}"
+            Message="Connect your Sony headphones to change these settings."
+            Severity="Informational" />
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,13 @@
+.vs/
+bin/
+obj/
+packages/
+AppPackages/
+BundleArtifacts/
+Generated Files/
+TestResults/
+*.user
+*.cer
+*.pfx
+.superpowers/
+artifacts/

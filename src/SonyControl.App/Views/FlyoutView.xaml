@@ -1,0 +1,350 @@
+<UserControl
+    x:Class="SonyControl.App.Views.FlyoutView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:app="using:SonyControl.App"
+    xmlns:local="using:SonyControl.App.Views"
+    xmlns:vm="using:SonyControl.Presentation.ViewModels"
+    KeyboardAcceleratorPlacementMode="Hidden">
+
+    <UserControl.KeyboardAccelerators>
+        <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked" />
+    </UserControl.KeyboardAccelerators>
+
+    <Grid x:Name="ContentRoot" RowDefinitions="*,Auto">
+
+        <!-- Empty Page -->
+        <StackPanel
+            Grid.Row="0"
+            Padding="24"
+            VerticalAlignment="Center"
+            Spacing="12"
+            Visibility="{x:Bind ViewModel.IsEmptyVisible, Mode=OneWay}">
+            <FontIcon
+                HorizontalAlignment="Center"
+                FontSize="48"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Glyph="&#xE7F6;" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                Style="{StaticResource BodyStrongTextBlockStyle}"
+                Text="No Sony headphones connected" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                Style="{StaticResource SecondaryTextStyle}"
+                Text="Connect them in Bluetooth settings and they'll show up here."
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+            <HyperlinkButton
+                HorizontalAlignment="Center"
+                Content="Open Bluetooth settings"
+                NavigateUri="ms-settings:bluetooth" />
+        </StackPanel>
+        <!-- /Empty Page -->
+
+        <!-- Picker Page -->
+        <Grid
+            Grid.Row="0"
+            Padding="20,12,20,12"
+            Visibility="{x:Bind ViewModel.IsPickerVisible, Mode=OneWay}">
+            <ListView
+                x:Name="HeadsetList"
+                Margin="-12,0"
+                IsItemClickEnabled="True"
+                ItemClick="OnHeadsetClick"
+                ItemsSource="{x:Bind ViewModel.Headsets}"
+                SelectionMode="None">
+                <!-- Item transitions are set in code: off while a default headset is set -->
+
+                <!-- The row draws its own hover and press backgrounds (they fade, see
+                     PickerRowStyle), so the list's instant ones are turned off -->
+                <ListView.Resources>
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent" />
+                </ListView.Resources>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HeadsetViewModel">
+                        <Grid
+                            AutomationProperties.Name="{x:Bind DeviceName}"
+                            ColumnDefinitions="Auto,*,Auto"
+                            ColumnSpacing="12"
+                            PointerCanceled="OnPickerRowRest"
+                            PointerEntered="OnPickerRowHover"
+                            PointerExited="OnPickerRowRest"
+                            PointerPressed="OnPickerRowPressed"
+                            PointerReleased="OnPickerRowHover"
+                            Style="{StaticResource PickerRowStyle}">
+                            <!-- Same fade as a button's hover -->
+                            <Grid.BackgroundTransition>
+                                <BrushTransition Duration="0:0:0.083" />
+                            </Grid.BackgroundTransition>
+                            <Grid.Resources>
+                                <SolidColorBrush x:Key="RowHoverBrush" Color="{ThemeResource SubtleFillColorSecondary}" />
+                                <SolidColorBrush x:Key="RowPressedBrush" Color="{ThemeResource SubtleFillColorTertiary}" />
+                                <SolidColorBrush x:Key="RowRestBrush" Color="Transparent" />
+                            </Grid.Resources>
+                            <!-- Model picture, or the headphone icon when there's no picture -->
+                            <Grid Width="48" Height="48">
+                                <Image
+                                    AutomationProperties.AccessibilityView="Raw"
+                                    Source="{x:Bind app:DeviceArt.For(ModelName)}"
+                                    Stretch="Uniform"
+                                    Visibility="{x:Bind app:DeviceArt.VisibleFor(ModelName)}" />
+                                <FontIcon
+                                    FontSize="20"
+                                    Glyph="&#xE7F6;"
+                                    Visibility="{x:Bind app:DeviceArt.HiddenFor(ModelName)}" />
+                            </Grid>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind DeviceName}" />
+                                <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="{x:Bind StatusText, Mode=OneWay}" />
+                                <local:BatteryRow Headset="{x:Bind}" Visibility="{x:Bind IsConnected, Mode=OneWay}" />
+                            </StackPanel>
+                            <FontIcon
+                                Grid.Column="2"
+                                FontSize="12"
+                                Glyph="&#xE76C;" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+        <!-- /Picker Page -->
+
+        <!-- Device Page -->
+        <ScrollViewer
+            Grid.Row="0"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            Visibility="{x:Bind ViewModel.IsDeviceVisible, Mode=OneWay}">
+            <StackPanel x:Name="DevicePanel" Padding="20" Spacing="12">
+
+                <!-- Header: picture, name, battery row and audio line, centered like Sony's app.
+                     The small negative bottom margin brings the separator a bit closer. -->
+                <Grid Margin="0,0,0,-4">
+                    <StackPanel HorizontalAlignment="Center" Spacing="6">
+                        <Image
+                            Height="120"
+                            HorizontalAlignment="Center"
+                            AutomationProperties.AccessibilityView="Raw"
+                            Source="{x:Bind app:DeviceArt.For(ViewModel.CurrentHeadset.ModelName), Mode=OneWay}"
+                            Stretch="Uniform"
+                            Visibility="{x:Bind app:DeviceArt.VisibleFor(ViewModel.CurrentHeadset.ModelName), Mode=OneWay}" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="{x:Bind ViewModel.CurrentHeadset.DeviceName, Mode=OneWay}" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SecondaryTextStyle}"
+                            Text="{x:Bind ViewModel.CurrentHeadset.StatusText, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.CurrentHeadset.ShowStatus, Mode=OneWay}" />
+
+                        <!-- Battery -->
+                        <local:BatteryRow HorizontalAlignment="Center" Headset="{x:Bind ViewModel.CurrentHeadset, Mode=OneWay}" />
+
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SecondaryTextStyle}"
+                            Text="{x:Bind ViewModel.CurrentHeadset.AudioText, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.CurrentHeadset.IsConnected, Mode=OneWay}" />
+                    </StackPanel>
+
+                    <!-- Back and busy indicator sit in the corners; the negative margin pulls the
+                         back arrow out of the page padding, close to the card's corner -->
+                    <Button
+                        Margin="-14,-14,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        AutomationProperties.Name="Back to headphones"
+                        Command="{x:Bind ViewModel.BackCommand}"
+                        Style="{StaticResource FooterIconButtonStyle}"
+                        ToolTipService.ToolTip="Back"
+                        Visibility="{x:Bind ViewModel.ShowBack, Mode=OneWay}">
+                        <FontIcon FontSize="16" Glyph="&#xE72B;" />
+                    </Button>
+                    <ProgressRing
+                        Width="20"
+                        Height="20"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        IsActive="{x:Bind ViewModel.CurrentHeadset.IsConnecting, Mode=OneWay}" />
+                </Grid>
+                <!-- /Header -->
+
+                <!-- Error -->
+                <InfoBar
+                    IsClosable="False"
+                    IsOpen="{x:Bind ViewModel.CurrentHeadset.HasError, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.CurrentHeadset.ErrorMessage, Mode=OneWay}"
+                    Severity="Error" />
+
+                <MenuFlyoutSeparator />
+
+                <!-- Noise Control -->
+                <StackPanel IsHitTestVisible="{x:Bind ViewModel.CurrentHeadset.IsConnected, Mode=OneWay}" Spacing="12">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Noise control" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <Button
+                            AutomationProperties.Name="Noise control off"
+                            Command="{x:Bind ViewModel.CurrentHeadset.SetNoiseModeCommand, Mode=OneWay}"
+                            CommandParameter="Off"
+                            Style="{x:Bind app:TileStyles.Pick(ViewModel.CurrentHeadset.IsNoiseOff), Mode=OneWay}">
+                            <StackPanel Spacing="4">
+                                <FontIcon FontSize="18" Glyph="&#xE74F;" />
+                                <TextBlock HorizontalAlignment="Center" Text="Off" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="1"
+                            AutomationProperties.Name="Noise cancelling"
+                            Command="{x:Bind ViewModel.CurrentHeadset.SetNoiseModeCommand, Mode=OneWay}"
+                            CommandParameter="NoiseCancelling"
+                            Style="{x:Bind app:TileStyles.Pick(ViewModel.CurrentHeadset.IsNoiseCancelling), Mode=OneWay}">
+                            <StackPanel Spacing="4">
+                                <FontIcon FontSize="18" Glyph="&#xE7F6;" />
+                                <TextBlock HorizontalAlignment="Center" Text="ANC" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="2"
+                            AutomationProperties.Name="Ambient sound"
+                            Command="{x:Bind ViewModel.CurrentHeadset.SetNoiseModeCommand, Mode=OneWay}"
+                            CommandParameter="Ambient"
+                            Style="{x:Bind app:TileStyles.Pick(ViewModel.CurrentHeadset.IsAmbient), Mode=OneWay}">
+                            <StackPanel Spacing="4">
+                                <FontIcon FontSize="18" Glyph="&#xE8D6;" />
+                                <TextBlock HorizontalAlignment="Center" Text="Ambient" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!-- Ambient Level -->
+                    <StackPanel Visibility="{x:Bind ViewModel.CurrentHeadset.IsAmbient, Mode=OneWay}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Ambient sound" />
+                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.CurrentHeadset.AmbientLevelText, Mode=OneWay}" />
+                        </Grid>
+                        <Slider
+                            AutomationProperties.Name="Ambient sound level"
+                            Maximum="20"
+                            Minimum="1"
+                            StepFrequency="1"
+                            TickFrequency="1"
+                            TickPlacement="Outside"
+                            Value="{x:Bind ViewModel.CurrentHeadset.AmbientLevel, Mode=TwoWay}" />
+                    </StackPanel>
+
+                    <!-- Focus On Voice -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock VerticalAlignment="Center" Text="Focus on voice" />
+                        <ToggleSwitch
+                            Grid.Column="1"
+                            MinWidth="0"
+                            AutomationProperties.Name="Focus on voice"
+                            IsOn="{x:Bind ViewModel.CurrentHeadset.FocusOnVoice, Mode=TwoWay}"
+                            OffContent=""
+                            OnContent="" />
+                    </Grid>
+
+                    <!-- Scenes -->
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.CurrentHeadset.SceneItems, Mode=OneWay}">
+                        <ItemsRepeater.Layout>
+                            <UniformGridLayout
+                                ItemsStretch="Fill"
+                                MaximumRowsOrColumns="3"
+                                MinColumnSpacing="8"
+                                MinItemWidth="96"
+                                MinRowSpacing="8" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SceneItemViewModel">
+                                <Button
+                                    HorizontalAlignment="Stretch"
+                                    AutomationProperties.Name="{x:Bind Name}"
+                                    Click="OnSceneClick"
+                                    Style="{x:Bind app:TileStyles.PickScene(IsActive), Mode=OneWay}"
+                                    Tag="{x:Bind Scene}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon FontSize="14" Glyph="{x:Bind Glyph}" />
+                                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </StackPanel>
+                <!-- /Noise Control -->
+
+                <MenuFlyoutSeparator />
+
+                <!-- Sound -->
+                <StackPanel IsHitTestVisible="{x:Bind ViewModel.CurrentHeadset.IsConnected, Mode=OneWay}" Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto" Visibility="{x:Bind ViewModel.CurrentHeadset.Features.Equalizer, Mode=OneWay}">
+                        <TextBlock VerticalAlignment="Center" Text="Equalizer" />
+                        <ComboBox
+                            Grid.Column="1"
+                            MinWidth="150"
+                            AutomationProperties.Name="Equalizer preset"
+                            DisplayMemberPath="Name"
+                            ItemsSource="{x:Bind ViewModel.CurrentHeadset.EqualizerPresets, Mode=OneWay}"
+                            SelectedIndex="{x:Bind ViewModel.CurrentHeadset.SelectedEqualizerIndex, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" Visibility="{x:Bind ViewModel.CurrentHeadset.Features.Dsee, Mode=OneWay}">
+                        <TextBlock VerticalAlignment="Center" Text="DSEE Extreme" />
+                        <ComboBox
+                            Grid.Column="1"
+                            MinWidth="150"
+                            AutomationProperties.Name="DSEE Extreme"
+                            ItemsSource="{x:Bind vm:HeadsetViewModel.DseeOptions}"
+                            SelectedIndex="{x:Bind ViewModel.CurrentHeadset.DseeIndex, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+                <!-- /Sound -->
+
+            </StackPanel>
+        </ScrollViewer>
+        <!-- /Device Page -->
+
+        <!-- Footer -->
+        <Grid
+            Grid.Row="1"
+            Height="52"
+            Padding="12,0"
+            Background="{ThemeResource FlyoutFooterBackgroundBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0"
+            ColumnDefinitions="*,Auto">
+            <StackPanel
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="4">
+                <Button
+                    Style="{StaticResource FooterIconButtonStyle}"
+                    AutomationProperties.Name="Reconnect"
+                    Command="{x:Bind ViewModel.ReconnectCommand}"
+                    IsEnabled="{x:Bind ViewModel.CurrentHeadset.CanReconnect, Mode=OneWay}"
+                    ToolTipService.ToolTip="Reconnect"
+                    Visibility="{x:Bind ViewModel.IsDeviceVisible, Mode=OneWay}">
+                    <FontIcon FontSize="16" Glyph="&#xE72C;" />
+                </Button>
+                <Button
+                    Style="{StaticResource FooterIconButtonStyle}"
+                    AutomationProperties.Name="Settings"
+                    Command="{x:Bind ViewModel.OpenSettingsCommand}"
+                    ToolTipService.ToolTip="Settings">
+                    <FontIcon FontSize="16" Glyph="&#xE713;" />
+                </Button>
+            </StackPanel>
+        </Grid>
+        <!-- /Footer -->
+    </Grid>
+</UserControl>

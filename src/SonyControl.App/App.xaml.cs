@@ -1,0 +1,190 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.UI.Xaml;
+using SonyControl.Core;
+using SonyControl.Presentation.Devices;
+using SonyControl.Presentation.Headsets;
+using SonyControl.Presentation.Logging;
+using SonyControl.Presentation.Navigation;
+using SonyControl.Presentation.Notifications;
+using SonyControl.Presentation.Settings;
+using SonyControl.Presentation.ViewModels;
+
+namespace SonyControl.App;
+
+/// <summary>
+/// Tray app composition root. No window opens at launch; the tray icon opens the flyout.
+/// </summary>
+public partial class App : Application, IDisposable
+{
+    private ILoggerFactory? _loggerFactory;
+    private ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+    private AppSettings? _settings;
+    private AppNotificationService? _notifications;
+    private HeadsetManager? _manager;
+    private FlyoutViewModel? _flyout;
+    private SettingsViewModel? _settingsViewModel;
+    private FlyoutWindow? _flyoutWindow;
+    private SettingsWindow? _settingsWindow;
+    private TrayIcon? _trayIcon;
+    private TrayMenuWindow? _trayMenu;
+
+    public App()
+    {
+        InitializeComponent();
+
+        // Closing the settings window must not end a tray app.
+        DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+        UnhandledException += (_, e) => AppLog.Unhandled(_logger, e.Exception);
+    }
+
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        AppIdentity.ClaimClassicAppId();
+
+        // Logging
+        var logFolder = Path.Combine(AppIdentity.DataFolder, "Logs");
+        var levelSwitch = new LogLevelSwitch();
+        _loggerFactory = LoggerFactory.Create(builder => builder
+            .SetMinimumLevel(LogLevel.Trace)
+            .AddProvider(new RollingFileLoggerProvider(logFolder, levelSwitch, TimeProvider.System)));
+        _logger = _loggerFactory.CreateLogger("SonyControl");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => AppLog.Unhandled(_logger, e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            AppLog.UnobservedTask(_logger, e.Exception);
+            e.SetObserved();
+        };
+
+        var nativeLogger = _loggerFactory.CreateLogger("SonyControl.Native");
+        HeadsetClient.SetLogHandler((level, message) =>
+        {
+            var logLevel = ToLogLevel(level);
+            AppLog.Native(nativeLogger, logLevel, message);
+        });
+
+        // Services
+        var time = TimeProvider.System;
+        // MSIX keeps settings in its package store; the classic install uses a file
+        ISettingsStore settingsStore = AppIdentity.IsPackaged
+            ? new LocalSettingsStore()
+            : new JsonFileSettingsStore(Path.Combine(AppIdentity.DataFolder, "settings.json"));
+        _settings = new AppSettings(settingsStore);
+        _notifications = new AppNotificationService(_loggerFactory.CreateLogger<AppNotificationService>());
+        _notifications.Register();
+        var lowBattery = new LowBatteryMonitor(_settings, _notifications);
+
+        _manager = new HeadsetManager(
+            new BluetoothDeviceWatcher(),
+            name => new WinRtHeadset(name),
+            _settings,
+            time,
+            _loggerFactory.CreateLogger<HeadsetManager>());
+
+        // View Models
+        var headsetLogger = _loggerFactory.CreateLogger<HeadsetViewModel>();
+        _flyout = new FlyoutViewModel(
+            _manager,
+            new FlyoutNavigator(_settings),
+            managed => new HeadsetViewModel(managed, _settings, lowBattery, time, headsetLogger));
+        _flyout.SettingsRequested += (_, _) => ShowSettings();
+        _flyout.QuitRequested += (_, _) => Quit();
+
+        _settingsViewModel = new SettingsViewModel(
+            _flyout,
+            _settings,
+            levelSwitch,
+            AppIdentity.IsPackaged ? new StartupTaskService() : new RegistryStartupService(Environment.ProcessPath!),
+            ApplyTheme,
+            HeadsetClient.SetDebugLogging,
+            OpenFolder,
+            logFolder,
+            _loggerFactory.CreateLogger<SettingsViewModel>());
+        _settingsViewModel.ApplyLogLevel();
+
+        // Tray Icon and Flyout
+        _flyoutWindow = new FlyoutWindow(_flyout);
+        _flyoutWindow.CloseRequested += (_, _) => _flyoutWindow.HideFlyout();
+
+        _trayIcon = new TrayIcon("Sony Control");
+        _trayMenu = new TrayMenuWindow();
+        _trayIcon.Invoked += (_, _) => _flyoutWindow.Toggle(_trayIcon.GetIconRect());
+        _trayIcon.ContextMenuRequested += (_, point) =>
+        {
+            _flyoutWindow.HideFlyout();
+            var (x, y, edge) = ScreenGeometry.GetMenuAnchor(point.X, point.Y);
+            _trayMenu.ShowAt(x, y, edge);
+        };
+        _trayMenu.SettingsRequested += (_, _) => ShowSettings();
+        _trayMenu.QuitRequested += (_, _) => Quit();
+        _trayIcon.Show();
+
+        ApplyTheme(_settings.Theme);
+        _manager.Start();
+        AppLog.Started(_logger, AppIdentity.Version);
+    }
+
+    private static LogLevel ToLogLevel(NativeLogLevel level) => level switch
+    {
+        NativeLogLevel.Debug => LogLevel.Debug,
+        NativeLogLevel.Warning => LogLevel.Warning,
+        NativeLogLevel.Error => LogLevel.Error,
+        _ => LogLevel.Information,
+    };
+
+    private void ShowSettings()
+    {
+        _flyoutWindow?.HideFlyout();
+        if (_settingsViewModel is null || _settings is null)
+        {
+            return;
+        }
+
+        if (_settingsWindow is null)
+        {
+            _settingsWindow = new SettingsWindow(_settingsViewModel);
+            _settingsWindow.ApplyTheme(_settings.Theme);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        }
+        _settingsWindow.Activate();
+    }
+
+    private void ApplyTheme(AppTheme theme)
+    {
+        _flyoutWindow?.ApplyTheme(theme);
+        _settingsWindow?.ApplyTheme(theme);
+        _trayMenu?.ApplyTheme(theme);
+    }
+
+    private void OpenFolder(string folder)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            AppLog.OpenFolderFailed(_logger, ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        _trayIcon?.Dispose();
+        _trayMenu?.Close();
+        _settingsWindow?.Close();
+        _flyoutWindow?.Shutdown();
+        _flyout?.Dispose();
+        _manager?.Dispose();
+        _notifications?.Dispose();
+        _loggerFactory?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private void Quit()
+    {
+        AppLog.Quit(_logger);
+        Dispose();
+        Exit();
+    }
+}
