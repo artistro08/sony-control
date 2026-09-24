@@ -1,10 +1,11 @@
 <#
     Outputs into src/SonyControl.App/Assets: the MSIX logos at every scale and target size
-    Windows asks for, the two tray icons (TrayLight.ico for light taskbars, TrayDark.ico for
-    dark ones) and AppIcon.ico, the exe's icon for the classic (MSI) install.
+    Windows asks for, and the two tray icons (TrayLight.ico for light taskbars, TrayDark.ico
+    for dark ones).
 
-    Draws the "Headphone" glyph (U+E7F6) from Segoe Fluent Icons, which ships
-    with Windows 11. Uses System.Drawing: https://learn.microsoft.com/dotnet/api/system.drawing
+    The logos come from AppIcon.ico, the app icon (also the exe's icon), which is kept as
+    is. The tray icons draw the "Headphone" glyph (U+E7F6) from Segoe Fluent Icons, which
+    ships with Windows 11. Uses System.Drawing: https://learn.microsoft.com/dotnet/api/system.drawing
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -13,62 +14,33 @@ Add-Type -AssemblyName System.Drawing
 $assets = Join-Path $PSScriptRoot '..\src\SonyControl.App\Assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
+$appIcon = (Resolve-Path (Join-Path $assets 'AppIcon.ico')).Path
 $glyph = [string][char]0xE7F6
 $fontFamily = 'Segoe Fluent Icons'
 
-# Draw the glyph centered on a canvas, optionally on a rounded tile
-function New-GlyphImage {
+# Draw the app icon (Assets\AppIcon.ico) centered on a transparent canvas, at $Scale of the
+# shorter side. Uses the icon's closest frame, so small sizes get its hand-sized images.
+function New-AppIconImage {
     param(
         [int] $Width,
         [int] $Height,
-        [double] $GlyphScale,
-        [System.Drawing.Color] $Foreground,
-        [System.Drawing.Color] $Tile,
+        [double] $Scale,
         [string] $Path
     )
 
-    # Drawn 8x larger, then shrunk: GDI+ draws this glyph badly (or not at all) at small sizes
-    # off Segoe Fluent's 16 px grid, which made the notification icon look distorted
-    $factor = 8
-    $bigWidth = $Width * $factor
-    $bigHeight = $Height * $factor
-    $big = New-Object System.Drawing.Bitmap $bigWidth, $bigHeight, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $graphics = [System.Drawing.Graphics]::FromImage($big)
-    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
-    $graphics.Clear([System.Drawing.Color]::Transparent)
-
-    if ($Tile.A -gt 0) {
-        $side = [Math]::Min($bigWidth, $bigHeight)
-        $radius = [int]($side * 0.2)
-        $x = [int](($bigWidth - $side) / 2)
-        $y = [int](($bigHeight - $side) / 2)
-        $shape = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $shape.AddArc($x, $y, $radius * 2, $radius * 2, 180, 90)
-        $shape.AddArc($x + $side - $radius * 2, $y, $radius * 2, $radius * 2, 270, 90)
-        $shape.AddArc($x + $side - $radius * 2, $y + $side - $radius * 2, $radius * 2, $radius * 2, 0, 90)
-        $shape.AddArc($x, $y + $side - $radius * 2, $radius * 2, $radius * 2, 90, 90)
-        $shape.CloseFigure()
-        $graphics.FillPath((New-Object System.Drawing.SolidBrush $Tile), $shape)
-    }
-
-    $size = [Math]::Min($bigWidth, $bigHeight) * $GlyphScale
-    $font = New-Object System.Drawing.Font $fontFamily, $size, ([System.Drawing.GraphicsUnit]::Pixel)
-    $format = New-Object System.Drawing.StringFormat
-    $format.Alignment = [System.Drawing.StringAlignment]::Center
-    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $area = New-Object System.Drawing.RectangleF 0, 0, $bigWidth, $bigHeight
-    $graphics.DrawString($glyph, $font, (New-Object System.Drawing.SolidBrush $Foreground), $area, $format)
-    $graphics.Dispose()
+    $side = [int][Math]::Round([Math]::Min($Width, $Height) * $Scale)
+    $icon = New-Object System.Drawing.Icon $appIcon, $side, $side
+    $frame = $icon.ToBitmap()
+    $icon.Dispose()
 
     $bitmap = New-Object System.Drawing.Bitmap $Width, $Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $small = [System.Drawing.Graphics]::FromImage($bitmap)
-    $small.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $small.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-    $small.Clear([System.Drawing.Color]::Transparent)
-    $small.DrawImage($big, 0, 0, $Width, $Height)
-    $small.Dispose()
-    $big.Dispose()
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $graphics.Clear([System.Drawing.Color]::Transparent)
+    $graphics.DrawImage($frame, [int](($Width - $side) / 2), [int](($Height - $side) / 2), $side, $side)
+    $graphics.Dispose()
+    $frame.Dispose()
 
     $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bitmap.Dispose()
@@ -77,8 +49,6 @@ function New-GlyphImage {
 
 $white = [System.Drawing.Color]::White
 $black = [System.Drawing.Color]::Black
-$tile = [System.Drawing.Color]::FromArgb(255, 32, 32, 32)
-$none = [System.Drawing.Color]::Transparent
 
 # Package Logos, one file per size Windows asks for. The manifest names the plain file
 # (e.g. Square44x44Logo.png) and Windows picks the qualified one that fits:
@@ -93,18 +63,18 @@ foreach ($name in 'Square44x44Logo', 'Square150x150Logo', 'Wide310x150Logo', 'St
 
 foreach ($scale in 100, 125, 150, 200, 400) {
     $factor = $scale / 100
-    New-GlyphImage -Width ([int](44 * $factor)) -Height ([int](44 * $factor)) -GlyphScale 0.6 -Foreground $white -Tile $tile -Path (Join-Path $assets "Square44x44Logo.scale-$scale.png")
-    New-GlyphImage -Width ([int](150 * $factor)) -Height ([int](150 * $factor)) -GlyphScale 0.5 -Foreground $white -Tile $tile -Path (Join-Path $assets "Square150x150Logo.scale-$scale.png")
-    New-GlyphImage -Width ([int](310 * $factor)) -Height ([int](150 * $factor)) -GlyphScale 0.5 -Foreground $white -Tile $tile -Path (Join-Path $assets "Wide310x150Logo.scale-$scale.png")
-    New-GlyphImage -Width ([int](50 * $factor)) -Height ([int](50 * $factor)) -GlyphScale 0.6 -Foreground $white -Tile $tile -Path (Join-Path $assets "StoreLogo.scale-$scale.png")
+    New-AppIconImage -Width ([int](44 * $factor)) -Height ([int](44 * $factor)) -Scale 1 -Path (Join-Path $assets "Square44x44Logo.scale-$scale.png")
+    New-AppIconImage -Width ([int](150 * $factor)) -Height ([int](150 * $factor)) -Scale 0.6 -Path (Join-Path $assets "Square150x150Logo.scale-$scale.png")
+    New-AppIconImage -Width ([int](310 * $factor)) -Height ([int](150 * $factor)) -Scale 0.6 -Path (Join-Path $assets "Wide310x150Logo.scale-$scale.png")
+    New-AppIconImage -Width ([int](50 * $factor)) -Height ([int](50 * $factor)) -Scale 1 -Path (Join-Path $assets "StoreLogo.scale-$scale.png")
 }
 
-# Exact-size app icons (notifications, taskbar, Start's app list): on the tile, plus
-# unplated (no tile) for dark and light surfaces
+# Exact-size app icons (notifications, taskbar, Start's app list). The icon brings its own
+# colors, so the plated and unplated (dark and light surface) versions are the same image.
 foreach ($target in 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256) {
-    New-GlyphImage -Width $target -Height $target -GlyphScale 0.6 -Foreground $white -Tile $tile -Path (Join-Path $assets "Square44x44Logo.targetsize-$target.png")
-    New-GlyphImage -Width $target -Height $target -GlyphScale 0.85 -Foreground $white -Tile $none -Path (Join-Path $assets "Square44x44Logo.targetsize-${target}_altform-unplated.png")
-    New-GlyphImage -Width $target -Height $target -GlyphScale 0.85 -Foreground $black -Tile $none -Path (Join-Path $assets "Square44x44Logo.targetsize-${target}_altform-lightunplated.png")
+    foreach ($suffix in '', '_altform-unplated', '_altform-lightunplated') {
+        New-AppIconImage -Width $target -Height $target -Scale 1 -Path (Join-Path $assets "Square44x44Logo.targetsize-$target$suffix.png")
+    }
 }
 
 # Draw the glyph at one exact pixel size as a classic icon image
@@ -241,18 +211,3 @@ function Write-IconFile {
 # Tray Icons
 New-GlyphIcon -Foreground $black -Path (Join-Path $assets 'TrayLight.ico')
 New-GlyphIcon -Foreground $white -Path (Join-Path $assets 'TrayDark.ico')
-
-# Exe Icon (classic install: Start menu, Apps & features, Explorer), from the tiled logos
-# above. Classic images up to 64, the 256 one as PNG like Windows' own icons.
-$iconSizes = 16, 24, 32, 48, 64, 256
-$iconImages = foreach ($size in $iconSizes) {
-    $source = Join-Path $assets "Square44x44Logo.targetsize-$size.png"
-    if ($size -eq 256) {
-        , [System.IO.File]::ReadAllBytes($source)
-        continue
-    }
-    $bitmap = [System.Drawing.Bitmap]::FromFile($source)
-    , (ConvertTo-IconImage -Bitmap $bitmap)
-    $bitmap.Dispose()
-}
-Write-IconFile -Sizes $iconSizes -Images $iconImages -Path (Join-Path $assets 'AppIcon.ico')

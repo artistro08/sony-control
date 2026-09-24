@@ -112,7 +112,7 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        _navigator.Pick(headset.Id);
+        _navigator.Pick(headset.Id, headset.IsAvailable);
         Refresh();
     }
 
@@ -143,19 +143,35 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
         {
             Headsets.Remove(viewModel);
             viewModel.AutoConnectChanged -= OnAutoConnectChanged;
+            viewModel.ReconnectRequested -= OnReconnectRequested;
             viewModel.Dispose();
         }
         Refresh();
     });
 
+    // Also covers Windows connecting or disconnecting the headset, which can change the page
     private void OnConnectionStateChanged(object? sender, ManagedHeadset headset) => _ui.Post(() =>
-        Headsets.FirstOrDefault(item => item.Id == headset.Id)?.UpdateConnectionState(headset.ConnectionState));
+    {
+        Headsets.FirstOrDefault(item => item.Id == headset.Id)?.UpdateConnectionState(headset.ConnectionState);
+        Refresh();
+    });
 
     private void OnAutoConnectChanged(object? sender, EventArgs e)
     {
         if (sender is HeadsetViewModel headset)
         {
             _manager.ApplyAutoConnect(headset.Id);
+            Refresh();
+        }
+    }
+
+    private void OnReconnectRequested(object? sender, EventArgs e)
+    {
+        if (sender is HeadsetViewModel headset)
+        {
+            _manager.Reconnect(headset.Id);
+            headset.RaiseAutoConnectChanged();
+            Refresh();
         }
     }
 
@@ -167,12 +183,13 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
         }
         var viewModel = _createHeadsetViewModel(headset);
         viewModel.AutoConnectChanged += OnAutoConnectChanged;
+        viewModel.ReconnectRequested += OnReconnectRequested;
         Headsets.Add(viewModel);
     }
 
     private void Refresh()
     {
-        _route = _navigator.Resolve([.. Headsets.Select(headset => headset.Id)]);
+        _route = _navigator.Resolve([.. Headsets.Select(headset => new HeadsetAvailability(headset.Id, headset.IsAvailable))]);
         CurrentHeadset = _route.HeadsetId is null ? null : Headsets.FirstOrDefault(headset => headset.Id == _route.HeadsetId);
         OnPropertyChanged(nameof(Page));
         OnPropertyChanged(nameof(IsEmptyVisible));

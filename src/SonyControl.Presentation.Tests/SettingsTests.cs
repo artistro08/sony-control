@@ -43,6 +43,17 @@ public sealed class AppSettingsTests
     }
 
     [TestMethod]
+    public void SavedScenesGetTheNewOfficeIcon()
+    {
+        var settings = new AppSettings(new InMemorySettingsStore())
+        {
+            Scenes = [new Scene("Office", "", new NoiseControlSetting(NoiseMode.Ambient, 10, true))],
+        };
+
+        Assert.AreEqual(Scene.OfficeGlyph, settings.Scenes[0].Glyph);
+    }
+
+    [TestMethod]
     public void RoundTripsScenes()
     {
         var store = new InMemorySettingsStore();
@@ -84,55 +95,93 @@ public sealed class FlyoutNavigatorTests
         Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Empty, null, false), Navigator().Resolve([]));
 
     [TestMethod]
-    public void OneHeadsetGoesStraightToItsPage() =>
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, false), Navigator().Resolve([Xm6]));
+    public void OneHeadsetGoesStraightToItsPageWithBackToThePicker() =>
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), Navigator().Resolve([Up(Xm6)]));
 
     [TestMethod]
-    public void SeveralHeadsetsWithNothingRememberedShowsPicker() =>
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Picker, null, false), Navigator().Resolve([Xm6, Xm4]));
+    public void OneDisconnectedHeadsetStillOpensItsPage() =>
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), Navigator().Resolve([Down(Xm6)]));
+
+    [TestMethod]
+    public void OneConnectedAmongDisconnectedOpensTheConnectedOne() =>
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm4, true), Navigator().Resolve([Down(Xm6), Up(Xm4)]));
+
+    [TestMethod]
+    public void SeveralConnectedWithNothingRememberedShowsPicker() =>
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Picker, null, false), Navigator().Resolve([Up(Xm6), Up(Xm4)]));
 
     [TestMethod]
     public void PickingRemembersTheHeadset()
     {
         Navigator().Pick(Xm4);
 
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm4, true), Navigator().Resolve([Xm6, Xm4]));
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm4, true), Navigator().Resolve([Up(Xm6), Up(Xm4)]));
     }
 
     [TestMethod]
-    public void RememberedHeadsetDisconnectedFallsBackToPicker()
+    public void PickingADisconnectedHeadsetShowsIt()
     {
-        _settings.RememberedHeadsetId = Xm6;
+        var navigator = Navigator();
 
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Picker, null, false), Navigator().Resolve([Xm4, "AC:80:0A:00:00:05"]));
+        navigator.Pick(Xm6, isAvailable: false);
+
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), navigator.Resolve([Down(Xm6), Up(Xm4)]));
     }
 
     [TestMethod]
-    public void RememberedHeadsetDisconnectedFallsBackToOnlyRemainingHeadset()
+    public void RememberedHeadsetDisconnectingFallsBackToTheConnectedOne()
     {
         _settings.RememberedHeadsetId = Xm6;
 
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm4, false), Navigator().Resolve([Xm4]));
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm4, true), Navigator().Resolve([Down(Xm6), Up(Xm4)]));
         Assert.AreEqual(Xm6, _settings.RememberedHeadsetId);
+    }
+
+    [TestMethod]
+    public void RememberedHeadsetDisconnectingWithSeveralOthersShowsPicker()
+    {
+        _settings.RememberedHeadsetId = Xm6;
+
+        Assert.AreEqual(FlyoutPageKind.Picker, Navigator().Resolve([Down(Xm6), Up(Xm4), Up("AC:80:0A:00:00:05")]).Kind);
+    }
+
+    [TestMethod]
+    public void RememberedHeadsetDisconnectedWithNothingElseConnectedStaysOnIt()
+    {
+        _settings.RememberedHeadsetId = Xm6;
+
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), Navigator().Resolve([Down(Xm6), Down(Xm4)]));
     }
 
     [TestMethod]
     public void RememberedHeadsetReconnectingReturnsToItsPage()
     {
         _settings.RememberedHeadsetId = Xm6;
-        _ = Navigator().Resolve([Xm4]);
 
-        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), Navigator().Resolve([Xm4, Xm6]));
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Device, Xm6, true), Navigator().Resolve([Up(Xm4), Up(Xm6)]));
     }
 
     [TestMethod]
-    public void BackClearsTheRememberedHeadset()
+    public void BackAlwaysShowsThePickerEvenWithOneHeadset()
     {
         _settings.RememberedHeadsetId = Xm6;
-        Navigator().Back();
+        var navigator = Navigator();
+
+        navigator.Back();
 
         Assert.IsNull(_settings.RememberedHeadsetId);
-        Assert.AreEqual(FlyoutPageKind.Picker, Navigator().Resolve([Xm6, Xm4]).Kind);
+        Assert.AreEqual(new FlyoutRoute(FlyoutPageKind.Picker, null, false), navigator.Resolve([Up(Xm6)]));
+    }
+
+    [TestMethod]
+    public void PickingAfterBackLeavesThePicker()
+    {
+        var navigator = Navigator();
+        navigator.Back();
+
+        navigator.Pick(Xm6);
+
+        Assert.AreEqual(FlyoutPageKind.Device, navigator.Resolve([Up(Xm6)]).Kind);
     }
 
     [TestMethod]
@@ -140,8 +189,12 @@ public sealed class FlyoutNavigatorTests
     {
         _settings.RememberedHeadsetId = "UNPAIRED";
 
-        Assert.AreEqual(FlyoutPageKind.Picker, Navigator().Resolve([Xm6, Xm4]).Kind);
+        Assert.AreEqual(FlyoutPageKind.Picker, Navigator().Resolve([Up(Xm6), Up(Xm4)]).Kind);
     }
+
+    private static HeadsetAvailability Up(string id) => new(id, true);
+
+    private static HeadsetAvailability Down(string id) => new(id, false);
 
     private FlyoutNavigator Navigator() => new(_settings);
 }

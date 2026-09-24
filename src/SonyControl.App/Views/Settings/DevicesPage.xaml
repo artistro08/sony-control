@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:SonyControl.App.Views.Settings"
+    xmlns:views="using:SonyControl.App.Views"
     xmlns:vm="using:SonyControl.Presentation.ViewModels">
 
     <ScrollViewer>
@@ -12,7 +13,7 @@
             <InfoBar
                 IsClosable="False"
                 IsOpen="{x:Bind ViewModel.NoHeadset, Mode=OneWay}"
-                Message="Connect your Sony headphones in Bluetooth settings and they'll show up here."
+                Message="Pair your Sony headphones in Bluetooth settings and they'll show up here."
                 Severity="Informational" />
 
             <!-- Headset Cards -->
@@ -37,12 +38,27 @@
                                         <Run Text=" · Codec " /><Run Text="{x:Bind Codec, Mode=OneWay}" />
                                     </TextBlock>
                                 </StackPanel>
-                                <ToggleSwitch
-                                    Grid.Column="2"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Connect automatically"
-                                    Header="Connect automatically"
-                                    IsOn="{x:Bind AutoConnect, Mode=TwoWay}" />
+                                <!-- Release the headphones for another device, or take them back -->
+                                <Grid Grid.Column="2" VerticalAlignment="Center">
+                                    <Button
+                                        AutomationProperties.Name="Disconnect"
+                                        Command="{x:Bind DisconnectCommand}"
+                                        Visibility="{x:Bind IsConnected, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <views:PlugIcon VerticalAlignment="Center" />
+                                            <TextBlock Text="Disconnect" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button
+                                        AutomationProperties.Name="Reconnect"
+                                        Command="{x:Bind ReconnectCommand}"
+                                        Visibility="{x:Bind ShowReconnect, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <views:PlugIcon VerticalAlignment="Center" IsConnected="True" />
+                                            <TextBlock Text="Reconnect" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
                             </Grid>
                         </Border>
                     </DataTemplate>

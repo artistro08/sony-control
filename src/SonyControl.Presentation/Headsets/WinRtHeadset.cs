@@ -7,13 +7,17 @@ namespace SonyControl.Presentation.Headsets;
 /// </summary>
 public sealed class WinRtHeadset : IHeadset
 {
+    // One preset list shared by every headset, so a dropdown switching between headphones keeps
+    // the same list (a new list clears its selection)
+    private static readonly Lazy<IReadOnlyList<EqualizerPresetOption>> SharedPresets =
+        new(() => [.. Core.HeadsetClient.GetEqualizerPresets().Select(preset => new EqualizerPresetOption(preset.Value, preset.Name))]);
+
     private readonly Core.HeadsetClient _client;
 
     public WinRtHeadset(string deviceName)
     {
         _client = new Core.HeadsetClient(deviceName);
         Features = ToFeatures(_client.Capabilities);
-        EqualizerPresets = [.. Core.HeadsetClient.GetEqualizerPresets().Select(preset => new EqualizerPresetOption(preset.Value, preset.Name))];
 
         _client.StateChanged += OnStateChanged;
         _client.Disconnected += OnDisconnected;
@@ -33,7 +37,7 @@ public sealed class WinRtHeadset : IHeadset
 
     public HeadsetSnapshot State => ToSnapshot(_client.State);
 
-    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets { get; }
+    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => SharedPresets.Value;
 
     public Task ConnectAsync(string bluetoothAddress) => _client.ConnectAsync(bluetoothAddress).AsTask();
 
@@ -57,6 +61,8 @@ public sealed class WinRtHeadset : IHeadset
             value.Bands[4])).AsTask();
 
     public Task SetDseeAsync(bool enabled) => _client.SetDseeAsync(enabled).AsTask();
+
+    public Task PowerOffAsync() => _client.PowerOffAsync().AsTask();
 
     public Task SetSpeakToChatAsync(bool enabled) => _client.SetSpeakToChatAsync(enabled).AsTask();
 

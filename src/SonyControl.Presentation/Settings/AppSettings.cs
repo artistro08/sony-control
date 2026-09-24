@@ -78,7 +78,12 @@ public sealed class AppSettings
             }
             try
             {
-                return JsonSerializer.Deserialize<List<Scene>>(json, JsonOptions) ?? [.. Scene.Defaults];
+                var scenes = JsonSerializer.Deserialize<List<Scene>>(json, JsonOptions);
+                if (scenes is null)
+                {
+                    return Scene.Defaults;
+                }
+                return [.. scenes.Select(scene => scene.Glyph == Scene.OldOfficeGlyph ? scene with { Glyph = Scene.OfficeGlyph } : scene)];
             }
             catch (JsonException)
             {

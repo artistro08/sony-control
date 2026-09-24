@@ -19,7 +19,8 @@
                     <ToggleSwitch
                         Grid.Column="1"
                         AutomationProperties.Name="Start when I sign in"
-                        IsOn="{x:Bind ViewModel.LaunchAtSignIn, Mode=TwoWay}" />
+                        IsOn="{x:Bind ViewModel.LaunchAtSignIn, Mode=TwoWay}"
+                        Style="{StaticResource CardToggleSwitchStyle}" />
                 </Grid>
             </Border>
 
@@ -33,7 +34,8 @@
                     <ToggleSwitch
                         Grid.Column="1"
                         AutomationProperties.Name="Low battery notifications"
-                        IsOn="{x:Bind ViewModel.LowBatteryNotifications, Mode=TwoWay}" />
+                        IsOn="{x:Bind ViewModel.LowBatteryNotifications, Mode=TwoWay}"
+                        Style="{StaticResource CardToggleSwitchStyle}" />
                 </Grid>
             </Border>
 
@@ -62,7 +64,8 @@
                         <ToggleSwitch
                             Grid.Column="1"
                             AutomationProperties.Name="Debug logging"
-                            IsOn="{x:Bind ViewModel.DebugLogging, Mode=TwoWay}" />
+                            IsOn="{x:Bind ViewModel.DebugLogging, Mode=TwoWay}"
+                            Style="{StaticResource CardToggleSwitchStyle}" />
                     </Grid>
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock

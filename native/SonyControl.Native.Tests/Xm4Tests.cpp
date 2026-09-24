@@ -82,6 +82,15 @@ TEST_F(Xm4Connection, NeverSendsThePowerOffOpcode) {
     }
 }
 
+TEST_F(Xm4Connection, PowerOffSendsTheV1PowerOffCommand) {
+    connect();
+
+    headset->reply();
+    controller->powerOff();
+
+    EXPECT_EQ(headset->requests().back(), (Payload{0x22, 0x00, 0x01}));
+}
+
 TEST_F(Xm4Connection, SetAmbientSendsV1Bytes) {
     connect();
 

@@ -32,6 +32,7 @@ public:
 
     bool getDsee() override;
     void setDsee(bool enabled) override;
+    void powerOff() override;
 
     std::string getFirmwareVersion() override;
     std::string getCodec() override;

@@ -36,6 +36,8 @@ public:
 
     virtual int getAutoPowerOff() = 0;
     virtual void setAutoPowerOff(int index) = 0;
+    // Turns the headset off. It may drop the link before acknowledging.
+    virtual void powerOff() = 0;
 
     virtual bool getSpeakToChat() = 0;
     virtual void setSpeakToChat(bool enabled) = 0;

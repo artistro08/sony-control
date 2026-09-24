@@ -112,6 +112,7 @@ namespace SonyControl.Core
         Windows.Foundation.IAsyncAction SetEqualizerPresetAsync(Int32 preset);
         Windows.Foundation.IAsyncAction SetEqualizerCustomAsync(EqualizerInfo value);
         Windows.Foundation.IAsyncAction SetDseeAsync(Boolean enabled);
+        Windows.Foundation.IAsyncAction PowerOffAsync();
         Windows.Foundation.IAsyncAction SetSpeakToChatAsync(Boolean enabled);
         Windows.Foundation.IAsyncAction SetAdaptiveVolumeAsync(Boolean enabled);
         Windows.Foundation.IAsyncAction SetAutoPowerOffAsync(Int32 index);

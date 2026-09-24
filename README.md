@@ -1,6 +1,14 @@
+<p align="center">
+    <img src="docs/images/icon.png" width="96" alt="Sony Control icon">
+</p>
+
 # Sony Control
 
 A Windows 11 tray app that controls Sony headphones from a native WinUI flyout.
+
+| Headphones | WF-1000XM6 | WH-1000XM4 |
+| :---: | :---: | :---: |
+| ![The flyout's headphone list](docs/images/flyout-picker.png) | ![The WF-1000XM6 page in the flyout](docs/images/flyout-wf-1000xm6.png) | ![The WH-1000XM4 page in the flyout](docs/images/flyout-wh-1000xm4.png) |
 
 ## Introduction
 

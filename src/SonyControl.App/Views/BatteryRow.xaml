@@ -3,8 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Battery Row: L, R and case for earbuds, one level for headphones -->
-    <Grid>
+    <!-- Battery Row: L, R and case for earbuds, one level for headphones. Hidden while Windows
+         doesn't have the headset. -->
+    <Grid Visibility="{x:Bind Headset.ShowBattery, Mode=OneWay, FallbackValue=Collapsed}">
 
         <!-- Earbuds -->
         <StackPanel

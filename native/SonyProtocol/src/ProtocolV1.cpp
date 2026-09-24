@@ -9,8 +9,8 @@
 // SonyProtocolImplV1. Every GET was additionally replayed against a
 // WH-1000XM4 on firmware 3.0.1 before being trusted here.
 //
-// CRITICAL: opcode 0x22 is POWER OFF on this generation. It must never be
-// sent from this file; ProtocolV1Tests pins that for the battery path.
+// CRITICAL: opcode 0x22 is POWER OFF on this generation. Only powerOff() may
+// send it; Xm4Tests pins that the battery path never does.
 
 namespace sony::protocol {
 
@@ -204,6 +204,11 @@ void ProtocolV1::setEqualizerCustom(int clearBass, const std::array<int, 5>& ban
 
 bool ProtocolV1::getDsee() {
     throw SonyException(SonyErrorCode::Unsupported, "DSEE is not supported on Protocol V1");
+}
+
+void ProtocolV1::powerOff() {
+    // SET: 22 00 01 (Gadgetbridge's SonyProtocolImplV1.powerOff)
+    _session.send(SonyFrame{ .type = DataType::DataMdr, .payload = {0x22, 0x00, 0x01} });
 }
 
 void ProtocolV1::setDsee(bool /*enabled*/) {

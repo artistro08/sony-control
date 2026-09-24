@@ -282,6 +282,10 @@ IAsyncAction HeadsetClient::SetEqualizerCustomAsync(Core::EqualizerInfo value) {
     return RunAsync([clearBass, bands](sony::protocol::HeadsetController& controller) { controller.setEqualizerCustom(clearBass, bands); });
 }
 
+IAsyncAction HeadsetClient::PowerOffAsync() {
+    return RunAsync([](sony::protocol::HeadsetController& controller) { controller.powerOff(); });
+}
+
 IAsyncAction HeadsetClient::SetDseeAsync(bool enabled) {
     return RunAsync([enabled](sony::protocol::HeadsetController& controller) { controller.setDsee(enabled); });
 }

@@ -6,14 +6,15 @@ using SonyControl.Presentation.Settings;
 namespace SonyControl.Presentation.Devices;
 
 /// <summary>
-/// Tracks the Sony headsets Windows reports as connected and keeps a control link open to each.
+/// Tracks the paired Sony headsets and keeps a control link open to each one Windows has
+/// connected.
 /// </summary>
 /// <remarks>
-/// A headset joins the list when Windows connects it and leaves when Windows disconnects or
-/// unpairs it. While it's listed, the control link is (re)opened on a schedule of 0 s, 1 s, 2 s,
-/// 5 s, then every 30 s until it succeeds. A link that drops while Windows still reports the
-/// headset connected restarts that schedule at 1 s. Headsets with auto-connect turned off stay
-/// listed but only connect when <see cref="Reconnect"/> is called.
+/// A headset is listed from the moment it's seen paired until it's unpaired, whether or not
+/// Windows has it connected right now. While Windows has it connected, the control link is
+/// (re)opened on a schedule of 0 s, 1 s, 2 s, 5 s, then every 30 s until it succeeds; a link that
+/// drops restarts that schedule at 1 s. <see cref="Release"/> lets go of a headset and stays off
+/// it (remembered across restarts) until <see cref="Reconnect"/>.
 /// </remarks>
 public sealed class HeadsetManager : IDisposable
 {
@@ -81,8 +82,12 @@ public sealed class HeadsetManager : IDisposable
     }
 
     /// <summary>
-    /// Drops the current link and connects again right away.
+    /// Drops the current link and connects again right away. Also undoes <see cref="Release"/>.
     /// </summary>
+    /// <remarks>
+    /// Works even when Windows doesn't have the headset connected: opening the link can bring it
+    /// back. That tries once; the retry schedule only runs while Windows has it connected.
+    /// </remarks>
     public void Reconnect(string id)
     {
         var headset = Find(id);
@@ -92,8 +97,20 @@ public sealed class HeadsetManager : IDisposable
         }
 
         LogMessages.Reconnecting(_logger, headset.Name);
+        _settings.SetAutoConnectEnabled(id, true);
         headset.Headset.Disconnect();
         StartConnectLoop(headset, 0);
+    }
+
+    /// <summary>
+    /// Lets go of a headset so another device (like the Sony phone app) can control it, and
+    /// stays off it, across restarts too, until <see cref="Reconnect"/>. Windows audio keeps
+    /// playing.
+    /// </summary>
+    public void Release(string id)
+    {
+        _settings.SetAutoConnectEnabled(id, false);
+        ApplyAutoConnect(id);
     }
 
     /// <summary>
@@ -109,7 +126,7 @@ public sealed class HeadsetManager : IDisposable
 
         if (_settings.IsAutoConnectEnabled(id))
         {
-            if (headset.ConnectionState == HeadsetConnectionState.Disconnected)
+            if (headset.IsWindowsConnected && headset.ConnectionState == HeadsetConnectionState.Disconnected)
             {
                 StartConnectLoop(headset, 0);
             }
@@ -177,39 +194,66 @@ public sealed class HeadsetManager : IDisposable
             _settings.SetKnownHeadsetName(id, model);
         }
 
+        var headset = Track(device, id, model);
+        if (headset is null)
+        {
+            return;
+        }
+
+        // Only act on changes: Windows repeats updates that don't change the connection
+        bool changed;
+        lock (_gate)
+        {
+            changed = headset.IsWindowsConnected != device.IsConnected || headset.Name != device.Name;
+            headset.IsWindowsConnected = device.IsConnected;
+            headset.Name = device.Name;
+        }
+        if (!changed)
+        {
+            return;
+        }
+
         if (device.IsConnected)
         {
-            Track(device, model);
+            LogMessages.WindowsConnected(_logger, headset.Name, headset.Id);
+            ConnectionStateChanged?.Invoke(this, headset);
+            if (_settings.IsAutoConnectEnabled(headset.Id) && headset.ConnectionState == HeadsetConnectionState.Disconnected)
+            {
+                StartConnectLoop(headset, 0);
+            }
+            return;
         }
-        else
-        {
-            Untrack(device.Id);
-        }
+
+        LogMessages.WindowsDisconnected(_logger, headset.Name);
+        CancelConnectLoop(headset);
+        headset.Headset.Disconnect();
+        SetState(headset, HeadsetConnectionState.Disconnected);
+        ConnectionStateChanged?.Invoke(this, headset);
     }
 
     private void OnDeviceRemoved(object? sender, string deviceId) => Untrack(deviceId);
 
-    private void Track(BluetoothDeviceInfo device, string model)
+    // The listed headset for a device, added (not yet Windows-connected) the first time it's seen
+    private ManagedHeadset? Track(BluetoothDeviceInfo device, string id, string model)
     {
         ManagedHeadset headset;
         lock (_gate)
         {
-            if (_disposed || _headsets.ContainsKey(device.Id))
+            if (_disposed)
             {
-                return;
+                return null;
             }
-            headset = new ManagedHeadset(device.Id, NormalizeAddress(device.Address), device.Name, _createHeadset(model));
+            if (_headsets.TryGetValue(device.Id, out var existing))
+            {
+                return existing;
+            }
+            headset = new ManagedHeadset(device.Id, id, device.Name, _createHeadset(model));
             _headsets[device.Id] = headset;
         }
 
         headset.Headset.Disconnected += (_, _) => OnLinkDropped(headset);
-        LogMessages.WindowsConnected(_logger, headset.Name, headset.Id);
         HeadsetAdded?.Invoke(this, headset);
-
-        if (_settings.IsAutoConnectEnabled(headset.Id))
-        {
-            StartConnectLoop(headset, 0);
-        }
+        return headset;
     }
 
     private void Untrack(string deviceId)
@@ -223,7 +267,7 @@ public sealed class HeadsetManager : IDisposable
             }
         }
 
-        LogMessages.WindowsDisconnected(_logger, headset.Name);
+        LogMessages.Unpaired(_logger, headset.Name);
         CancelConnectLoop(headset);
         headset.Headset.Dispose();
         HeadsetRemoved?.Invoke(this, headset);
@@ -241,7 +285,7 @@ public sealed class HeadsetManager : IDisposable
 
         LogMessages.LinkDropped(_logger, headset.Name);
         SetState(headset, HeadsetConnectionState.Disconnected);
-        if (_settings.IsAutoConnectEnabled(headset.Id))
+        if (headset.IsWindowsConnected && _settings.IsAutoConnectEnabled(headset.Id))
         {
             StartConnectLoop(headset, 1);
         }
@@ -312,6 +356,12 @@ public sealed class HeadsetManager : IDisposable
                 {
                     LogMessages.ConnectFailed(_logger, ex, headset.Name, delayIndex + 1);
                     SetState(headset, HeadsetConnectionState.Disconnected);
+
+                    // Out of range or off: one try is enough; Windows connecting it restarts the schedule
+                    if (!headset.IsWindowsConnected)
+                    {
+                        return;
+                    }
                 }
 
                 delayIndex++;

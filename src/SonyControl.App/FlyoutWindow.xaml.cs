@@ -167,6 +167,8 @@ public sealed partial class FlyoutWindow : Window
         // Still sliding out from a close that hasn't finished: turn around from where it is
         if (!AppWindow.IsVisible)
         {
+            // Placing the window can resize it, which moves every row; no glides until it's open
+            ImplicitMotion.Pause();
             PlaceWindow(iconRect);
             _panelVisual.Properties.InsertVector3("Translation", HiddenOffset());
             AppWindow.Show(true);
@@ -310,10 +312,16 @@ public sealed partial class FlyoutWindow : Window
 
         slide.Completed += (_, _) =>
         {
-            if (_slide == slide && !_isOpen)
+            if (_slide != slide)
             {
-                AppWindow.Hide();
+                return;
             }
+            if (_isOpen)
+            {
+                ImplicitMotion.Resume();
+                return;
+            }
+            AppWindow.Hide();
         };
     }
 }

@@ -61,8 +61,19 @@ public sealed class SceneEditorViewModel : ObservableObject
     public double AmbientLevel
     {
         get => _ambientLevel;
-        set => SetProperty(ref _ambientLevel, Math.Clamp(Math.Round(value), 1, 20));
+        set
+        {
+            if (SetProperty(ref _ambientLevel, Math.Clamp(Math.Round(value), 1, 20)))
+            {
+                OnPropertyChanged(nameof(AmbientLevelText));
+            }
+        }
     }
+
+    /// <summary>
+    /// The level as shown beside the slider, like the flyout's.
+    /// </summary>
+    public string AmbientLevelText => $"{_ambientLevel:0}";
 
     public bool FocusOnVoice
     {
@@ -146,6 +157,7 @@ public sealed class SettingsViewModel : ObservableObject
                 OnPropertyChanged(nameof(SelectedHeadset));
                 OnPropertyChanged(nameof(HasHeadset));
                 OnPropertyChanged(nameof(NoHeadset));
+                OnPropertyChanged(nameof(NoSystemOptions));
             }
         }
     }
@@ -156,6 +168,26 @@ public sealed class SettingsViewModel : ObservableObject
     public bool HasHeadset => SelectedHeadset is not null;
 
     public bool NoHeadset => SelectedHeadset is null;
+
+    /// <summary>
+    /// The selected headset has nothing for the System page (no auto power-off, no adaptive volume).
+    /// </summary>
+    public bool NoSystemOptions =>
+        SelectedHeadset is { Features: { AutoPowerOff: false, AdaptiveVolume: false } };
+
+    /// <summary>
+    /// Selects the headset the flyout is showing, so settings open on the same headphones.
+    /// Called when the settings window opens; after that the choice stays with the window.
+    /// </summary>
+    public void SelectCurrentHeadset()
+    {
+        var index = _flyout.CurrentHeadset is { } current ? Headsets.IndexOf(current) : -1;
+        if (index < 0)
+        {
+            return;
+        }
+        SelectedHeadsetIndex = index;
+    }
 
     // =========================================================================
     // SCENES
@@ -304,5 +336,6 @@ public sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedHeadset));
         OnPropertyChanged(nameof(HasHeadset));
         OnPropertyChanged(nameof(NoHeadset));
+        OnPropertyChanged(nameof(NoSystemOptions));
     }
 }

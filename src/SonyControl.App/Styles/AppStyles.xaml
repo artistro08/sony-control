@@ -83,14 +83,22 @@
         <Setter Property="Background" Value="{ThemeResource TextFillColorSecondaryBrush}" />
     </Style>
 
-    <!-- Equalizer Bands (Settings > Sound): the standard slider, turned vertical, -10 to +10 -->
-    <Style x:Key="EqualizerBandSliderStyle" TargetType="Slider">
+    <!-- Slider Thumb: WinUI's vertical thumb ships as an old flat bar; use the round one the
+         horizontal slider has -->
+    <x:Double x:Key="SliderVerticalThumbWidth">18</x:Double>
+    <x:Double x:Key="SliderVerticalThumbHeight">18</x:Double>
+
+    <!-- Equalizer Bands (Settings > Sound): the standard slider, turned vertical, -10 to +10,
+         with a notch every 5 steps -->
+    <Style x:Key="EqualizerBandSliderStyle" TargetType="Slider" BasedOn="{StaticResource DefaultSliderStyle}">
         <Setter Property="Orientation" Value="Vertical" />
         <Setter Property="Height" Value="180" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="Minimum" Value="-10" />
         <Setter Property="Maximum" Value="10" />
         <Setter Property="StepFrequency" Value="1" />
+        <Setter Property="TickFrequency" Value="5" />
+        <Setter Property="TickPlacement" Value="Outside" />
     </Style>
 
     <Style x:Key="EqualizerBandLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource SecondaryTextStyle}">
@@ -104,6 +112,22 @@
         <Setter Property="Padding" Value="12" />
         <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
         <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Section: wraps a group of controls so one IsEnabled disables them all (panels can't) -->
+    <Style x:Key="SectionStyle" TargetType="ContentControl">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+
+    <!-- Card Switch: no On/Off text beside it, so the switch sits flush right like the other
+         controls on a card -->
+    <Style x:Key="CardToggleSwitchStyle" TargetType="ToggleSwitch" BasedOn="{StaticResource DefaultToggleSwitchStyle}">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="OnContent" Value="" />
+        <Setter Property="OffContent" Value="" />
     </Style>
 
     <!-- Settings Cards -->

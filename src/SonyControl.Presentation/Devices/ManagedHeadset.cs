@@ -3,7 +3,8 @@ using SonyControl.Presentation.Headsets;
 namespace SonyControl.Presentation.Devices;
 
 /// <summary>
-/// A Sony headset Windows reports as connected, plus the state of the app's control link to it.
+/// A paired Sony headset, whether Windows has it connected, and the state of the app's control
+/// link to it.
 /// </summary>
 public sealed class ManagedHeadset
 {
@@ -25,9 +26,18 @@ public sealed class ManagedHeadset
     /// </summary>
     public string Id { get; }
 
-    public string Name { get; }
+    /// <summary>
+    /// Name in Windows. Follows renames.
+    /// </summary>
+    public string Name { get; internal set; }
 
     public IHeadset Headset { get; }
+
+    /// <summary>
+    /// Whether Windows has the headset connected (audio). The control link can only open while
+    /// it does, apart from a one-off <see cref="HeadsetManager.Reconnect"/>.
+    /// </summary>
+    public bool IsWindowsConnected { get; internal set; }
 
     public HeadsetConnectionState ConnectionState { get; internal set; }
 

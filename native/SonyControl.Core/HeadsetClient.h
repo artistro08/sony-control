@@ -32,6 +32,7 @@ struct HeadsetClient : HeadsetClientT<HeadsetClient> {
     Windows::Foundation::IAsyncAction SetEqualizerPresetAsync(int32_t preset);
     Windows::Foundation::IAsyncAction SetEqualizerCustomAsync(Core::EqualizerInfo value);
     Windows::Foundation::IAsyncAction SetDseeAsync(bool enabled);
+    Windows::Foundation::IAsyncAction PowerOffAsync();
     Windows::Foundation::IAsyncAction SetSpeakToChatAsync(bool enabled);
     Windows::Foundation::IAsyncAction SetAdaptiveVolumeAsync(bool enabled);
     Windows::Foundation::IAsyncAction SetAutoPowerOffAsync(int32_t index);

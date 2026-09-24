@@ -20,16 +20,18 @@ public sealed class HeadsetViewModelTests
     private readonly FakeHeadset _headset = new();
     private readonly FakeNotificationService _notifications = new();
     private readonly AppSettings _settings = new(new InMemorySettingsStore());
+    private ManagedHeadset _managed = null!;
     private HeadsetViewModel _viewModel = null!;
 
     [TestInitialize]
     public void CreateViewModel()
     {
-        var managed = new ManagedHeadset("device-xm6", "AC:80:0A:00:00:06", "WF-1000XM6", _headset)
+        _managed = new ManagedHeadset("device-xm6", "AC:80:0A:00:00:06", "WF-1000XM6", _headset)
         {
             ConnectionState = HeadsetConnectionState.Connected,
+            IsWindowsConnected = true,
         };
-        _viewModel = new HeadsetViewModel(managed, _settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
+        _viewModel = new HeadsetViewModel(_managed,_settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
     }
 
     [TestCleanup]
@@ -103,6 +105,14 @@ public sealed class HeadsetViewModelTests
 
         Assert.IsTrue(_viewModel.ShowCaseBattery);
         Assert.AreEqual("95%", _viewModel.CaseBatteryText);
+    }
+
+    [TestMethod]
+    public async Task TurnOffSendsPowerOff()
+    {
+        await _viewModel.PowerOffCommand.ExecuteAsync(null);
+
+        CollectionAssert.Contains(_headset.Commands, "power off");
     }
 
     [TestMethod]
@@ -189,13 +199,16 @@ public sealed class HeadsetViewModelTests
     }
 
     [TestMethod]
-    public void ReconnectIsDisabledWhileConnecting()
+    public void EqualizerKeepsItsPresetWhenTheListControlClearsIt()
     {
-        Assert.IsTrue(_viewModel.CanReconnect);
+        // A ComboBox given a new preset list clears its selection and writes -1 back
+        var before = _viewModel.SelectedEqualizerIndex;
+        Assert.IsTrue(before >= 0);
 
-        _viewModel.UpdateConnectionState(HeadsetConnectionState.Connecting);
+        _viewModel.SelectedEqualizerIndex = -1;
 
-        Assert.IsFalse(_viewModel.CanReconnect);
+        Assert.AreEqual(before, _viewModel.SelectedEqualizerIndex);
+        Assert.AreEqual(0, _headset.Commands.Count);
     }
 
     [TestMethod]
@@ -319,6 +332,77 @@ public sealed class HeadsetViewModelTests
     }
 
     [TestMethod]
+    public void DisconnectedHeadsetShowsWarningAndReconnect()
+    {
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+
+        Assert.IsFalse(_viewModel.IsConnected);
+        Assert.IsTrue(_viewModel.ShowDisconnectedWarning);
+        Assert.IsTrue(_viewModel.ShowReconnect);
+    }
+
+    [TestMethod]
+    public void HeadsetOffWindowsHidesReconnectAndBattery()
+    {
+        // Nothing to reconnect to until Windows has the headset again
+        _managed.IsWindowsConnected = false;
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+
+        Assert.IsTrue(_viewModel.ShowDisconnectedWarning);
+        Assert.IsFalse(_viewModel.ShowReconnect);
+        Assert.IsFalse(_viewModel.ShowBattery);
+    }
+
+    [TestMethod]
+    public void HeadsetOnWindowsShowsBattery()
+    {
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+
+        Assert.IsTrue(_viewModel.ShowBattery);
+    }
+
+    [TestMethod]
+    public void ConnectedHeadsetHidesWarningAndOffersDisconnect()
+    {
+        Assert.IsTrue(_viewModel.IsConnected);
+        Assert.IsFalse(_viewModel.ShowDisconnectedWarning);
+        Assert.IsFalse(_viewModel.ShowReconnect);
+    }
+
+    [TestMethod]
+    public void ConnectingHidesWarningAndReconnect()
+    {
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Connecting);
+
+        Assert.IsFalse(_viewModel.ShowDisconnectedWarning);
+        Assert.IsFalse(_viewModel.ShowReconnect);
+    }
+
+    [TestMethod]
+    public void DisconnectReleasesTheHeadset()
+    {
+        var raised = false;
+        _viewModel.AutoConnectChanged += (_, _) => raised = true;
+
+        _viewModel.DisconnectCommand.Execute(null);
+
+        Assert.IsTrue(raised);
+        Assert.IsTrue(_viewModel.IsReleased);
+        Assert.IsFalse(_settings.IsAutoConnectEnabled("AC:80:0A:00:00:06"));
+    }
+
+    [TestMethod]
+    public void ReconnectAsksForAReconnect()
+    {
+        var raised = false;
+        _viewModel.ReconnectRequested += (_, _) => raised = true;
+
+        _viewModel.ReconnectCommand.Execute(null);
+
+        Assert.IsTrue(raised);
+    }
+
+    [TestMethod]
     public void TurningAutoConnectOffSavesAndRaisesEvent()
     {
         var raised = false;
@@ -419,13 +503,67 @@ public sealed class FlyoutViewModelTests
     }
 
     [TestMethod]
-    public void OneHeadsetOpensItsPageWithoutBack()
+    public void OneHeadsetOpensItsPageWithBackToThePicker()
     {
         _source.Report(Xm6);
 
         Assert.IsTrue(_flyout.IsDeviceVisible);
-        Assert.IsFalse(_flyout.ShowBack);
+        Assert.IsTrue(_flyout.ShowBack);
         Assert.AreEqual("WF-1000XM6", _flyout.CurrentHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void BackShowsThePickerEvenWithOneHeadset()
+    {
+        _source.Report(Xm6);
+
+        _flyout.BackCommand.Execute(null);
+
+        Assert.IsTrue(_flyout.IsPickerVisible);
+        Assert.AreEqual(1, _flyout.Headsets.Count);
+    }
+
+    [TestMethod]
+    public void HeadsetWindowsDisconnectedStaysListedAsDisconnected()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+
+        _source.Report(Xm4 with { IsConnected = false });
+
+        Assert.AreEqual(2, _flyout.Headsets.Count);
+        var xm4 = _flyout.Headsets.Single(headset => headset.DeviceName == "WH-1000XM4");
+        Assert.IsFalse(xm4.IsWindowsConnected);
+        Assert.AreEqual("Disconnected", xm4.StatusText);
+    }
+
+    [TestMethod]
+    public void PickingADisconnectedHeadsetShowsItsPage()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4 with { IsConnected = false });
+        _flyout.BackCommand.Execute(null);
+
+        _flyout.PickCommand.Execute(_flyout.Headsets.Single(headset => headset.DeviceName == "WH-1000XM4"));
+
+        Assert.IsTrue(_flyout.IsDeviceVisible);
+        Assert.AreEqual("WH-1000XM4", _flyout.CurrentHeadset?.DeviceName);
+        Assert.IsTrue(_flyout.CurrentHeadset?.ShowDisconnectedWarning);
+    }
+
+    [TestMethod]
+    public async Task DisconnectThenReconnectFromTheFlyout()
+    {
+        _source.Report(Xm6);
+        var headset = _flyout.CurrentHeadset!;
+        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
+
+        headset.DisconnectCommand.Execute(null);
+        Assert.IsTrue(await TestWait.UntilAsync(() => !headset.IsConnected && headset.ShowReconnect));
+
+        headset.ReconnectCommand.Execute(null);
+        Assert.IsTrue(await TestWait.UntilAsync(() => headset.IsConnected));
+        Assert.IsFalse(headset.IsReleased);
     }
 
     [TestMethod]
@@ -476,7 +614,7 @@ public sealed class FlyoutViewModelTests
 
         _source.Report(Xm6 with { IsConnected = false });
         Assert.AreEqual("WH-1000XM4", _flyout.CurrentHeadset?.DeviceName);
-        Assert.IsFalse(_flyout.ShowBack);
+        Assert.IsTrue(_flyout.ShowBack);
 
         _source.Report(Xm6);
         Assert.AreEqual("WF-1000XM6", _flyout.CurrentHeadset?.DeviceName);
@@ -516,7 +654,12 @@ public sealed class SettingsViewModelTests
     public void CreateViewModel()
     {
         var time = new FakeTimeProvider();
-        _manager = new HeadsetManager(_source, name => new FakeHeadset(name), _settings, time, NullLogger<HeadsetManager>.Instance);
+        _manager = new HeadsetManager(
+            _source,
+            name => new FakeHeadset(name, name == "WH-1000XM4" ? FakeHeadset.Xm4Features : null),
+            _settings,
+            time,
+            NullLogger<HeadsetManager>.Instance);
         var monitor = new LowBatteryMonitor(_settings, new FakeNotificationService());
         _flyout = new FlyoutViewModel(
             _manager,
@@ -542,6 +685,42 @@ public sealed class SettingsViewModelTests
 
         Assert.AreEqual(0, _viewModel.SelectedHeadsetIndex);
         Assert.AreEqual("WF-1000XM6", _viewModel.SelectedHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void OpeningSettingsSelectsTheHeadsetShownInTheFlyout()
+    {
+        _source.Report(new BluetoothDeviceInfo("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true));
+        _source.Report(new BluetoothDeviceInfo("device-xm4", "WH-1000XM4", "ac:80:0a:00:00:04", true));
+        _flyout.PickCommand.Execute(_flyout.Headsets.Single(headset => headset.DeviceName == "WH-1000XM4"));
+
+        _viewModel.SelectCurrentHeadset();
+
+        Assert.AreEqual("WH-1000XM4", _viewModel.SelectedHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void OpenSettingsKeepTheirHeadsetWhenTheFlyoutSwitches()
+    {
+        _source.Report(new BluetoothDeviceInfo("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true));
+        _source.Report(new BluetoothDeviceInfo("device-xm4", "WH-1000XM4", "ac:80:0a:00:00:04", true));
+        _viewModel.SelectedHeadsetIndex = _flyout.Headsets.IndexOf(_flyout.Headsets.Single(headset => headset.DeviceName == "WF-1000XM6"));
+
+        _flyout.PickCommand.Execute(_flyout.Headsets.Single(headset => headset.DeviceName == "WH-1000XM4"));
+
+        Assert.AreEqual("WF-1000XM6", _viewModel.SelectedHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void SystemPageSaysSoWhenAHeadsetHasNoSystemOptions()
+    {
+        _source.Report(new BluetoothDeviceInfo("device-xm6", "WF-1000XM6", "ac:80:0a:00:00:06", true));
+        _source.Report(new BluetoothDeviceInfo("device-xm4", "WH-1000XM4", "ac:80:0a:00:00:04", true));
+        Assert.IsFalse(_viewModel.NoSystemOptions);
+
+        _viewModel.SelectedHeadsetIndex = _flyout.Headsets.IndexOf(_flyout.Headsets.Single(headset => headset.DeviceName == "WH-1000XM4"));
+
+        Assert.IsTrue(_viewModel.NoSystemOptions);
     }
 
     [TestMethod]
@@ -628,6 +807,18 @@ public sealed class SettingsViewModelTests
         _viewModel.SaveScenesCommand.Execute(null);
 
         Assert.AreEqual(new Scene("Deep work", "\uE708", new NoiseControlSetting(NoiseMode.Ambient, 5, false)), _settings.Scenes[0]);
+    }
+
+    [TestMethod]
+    public void SceneEditorShowsItsAmbientLevel()
+    {
+        var changed = new List<string?>();
+        _viewModel.Scenes[0].PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        _viewModel.Scenes[0].AmbientLevel = 7.4;
+
+        Assert.AreEqual("7", _viewModel.Scenes[0].AmbientLevelText);
+        CollectionAssert.Contains(changed, nameof(SceneEditorViewModel.AmbientLevelText));
     }
 
     [TestMethod]

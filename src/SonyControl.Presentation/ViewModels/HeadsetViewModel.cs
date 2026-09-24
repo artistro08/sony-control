@@ -98,6 +98,9 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
             }
         });
         ApplyCustomEqualizerCommand = new AsyncRelayCommand(ApplyCustomEqualizerAsync);
+        PowerOffCommand = new AsyncRelayCommand(() => RunCommandAsync(_headset.PowerOffAsync, "power"));
+        DisconnectCommand = new RelayCommand(() => AutoConnect = false);
+        ReconnectCommand = new RelayCommand(() => ReconnectRequested?.Invoke(this, EventArgs.Empty));
 
         _headset.StateChanged += OnHeadsetStateChanged;
         SceneItems = [.. settings.Scenes.Select(scene => new SceneItemViewModel(scene))];
@@ -133,9 +136,31 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
     public bool IsConnecting => _connectionState == HeadsetConnectionState.Connecting;
 
     /// <summary>
-    /// Reconnect waits while a connect is already running.
+    /// Whether Windows has the headset connected (audio), apart from the app's control link.
     /// </summary>
-    public bool CanReconnect => !IsConnecting;
+    public bool IsWindowsConnected => _managed.IsWindowsConnected;
+
+    /// <summary>
+    /// The app let go of the headset (Disconnect) and stays off it until Reconnect.
+    /// </summary>
+    public bool IsReleased => !AutoConnect;
+
+    /// <summary>
+    /// Worth showing as a destination: Windows has it and the app isn't holding off.
+    /// </summary>
+    public bool IsAvailable => IsWindowsConnected && !IsReleased;
+
+    /// <summary>
+    /// The warning bar and disabled controls show while there's no control link and none is
+    /// on the way.
+    /// </summary>
+    public bool ShowDisconnectedWarning => _connectionState == HeadsetConnectionState.Disconnected;
+
+    /// <summary>
+    /// Reconnect takes the Disconnect button's place while disconnected, but only while Windows
+    /// has the headset; without that there's nothing to reconnect to.
+    /// </summary>
+    public bool ShowReconnect => _connectionState == HeadsetConnectionState.Disconnected && IsWindowsConnected;
 
     public string StatusText => _connectionState switch
     {
@@ -143,7 +168,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         HeadsetConnectionState.Connected when !IsKnownModel => "Connected · Unverified model",
         HeadsetConnectionState.Connected => "Connected",
         HeadsetConnectionState.Connecting => "Connecting…",
-        _ => AutoConnect ? "Disconnected" : "Auto-connect off",
+        _ => "Disconnected",
     };
 
     /// <summary>
@@ -167,17 +192,36 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
                 return;
             }
             _settings.SetAutoConnectEnabled(Id, value);
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(StatusText));
+            RaiseAutoConnectChanged();
             AutoConnectChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public event EventHandler? AutoConnectChanged;
 
+    /// <summary>
+    /// Raised by <see cref="ReconnectCommand"/>; the flyout asks the headset manager to reconnect.
+    /// </summary>
+    public event EventHandler? ReconnectRequested;
+
+    /// <summary>
+    /// Lets go of the headset until Reconnect (see <see cref="HeadsetManager.Release"/>).
+    /// </summary>
+    public IRelayCommand DisconnectCommand { get; }
+
+    /// <summary>
+    /// Connects again, undoing Disconnect.
+    /// </summary>
+    public IRelayCommand ReconnectCommand { get; }
+
     // =========================================================================
     // BATTERY
     // =========================================================================
+
+    /// <summary>
+    /// The battery row hides while Windows doesn't have the headset; the levels would only be stale.
+    /// </summary>
+    public bool ShowBattery => IsWindowsConnected;
 
     public bool ShowDualBattery => Features.DualBattery && (ShowLeftBattery || ShowRightBattery);
 
@@ -258,11 +302,22 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => _headset.EqualizerPresets;
 
+    /// <summary>
+    /// Index into <see cref="EqualizerPresets"/>. A -1 from the UI is ignored: a ComboBox
+    /// writes it back when its preset list is swapped (switching headphones), which would
+    /// otherwise leave the dropdown blank.
+    /// </summary>
     public int SelectedEqualizerIndex
     {
         get => _selectedEqualizerIndex;
         set
         {
+            if (value < 0 && !_applying && _selectedEqualizerIndex >= 0)
+            {
+                // Tell the control again, once it has finished swapping lists
+                _ui.Defer(() => OnPropertyChanged(nameof(SelectedEqualizerIndex)));
+                return;
+            }
             if (!SetProperty(ref _selectedEqualizerIndex, value) || _applying || value < 0 || value >= EqualizerPresets.Count)
             {
                 return;
@@ -332,6 +387,11 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
     }
 
     public IAsyncRelayCommand ApplyCustomEqualizerCommand { get; }
+
+    /// <summary>
+    /// Turns the headset off (the footer's "Turn off" button).
+    /// </summary>
+    public IAsyncRelayCommand PowerOffCommand { get; }
 
     // =========================================================================
     // SYSTEM
@@ -454,17 +514,34 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Settings changed outside this view model (the manager's Reconnect turns auto-connect back on).
+    /// </summary>
+    internal void RaiseAutoConnectChanged()
+    {
+        OnPropertyChanged(nameof(AutoConnect));
+        OnPropertyChanged(nameof(IsReleased));
+        OnPropertyChanged(nameof(IsAvailable));
+    }
+
     internal void UpdateConnectionState(HeadsetConnectionState state)
     {
+        // Windows connection and name changes arrive on the same event
+        OnPropertyChanged(nameof(DeviceName));
+        OnPropertyChanged(nameof(IsWindowsConnected));
+        OnPropertyChanged(nameof(IsAvailable));
+        OnPropertyChanged(nameof(ShowBattery));
+        OnPropertyChanged(nameof(ShowReconnect));
         if (!SetProperty(ref _connectionState, state, nameof(ConnectionState)))
         {
             return;
         }
         OnPropertyChanged(nameof(IsConnected));
         OnPropertyChanged(nameof(IsConnecting));
-        OnPropertyChanged(nameof(CanReconnect));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(ShowStatus));
+        OnPropertyChanged(nameof(ShowDisconnectedWarning));
+        OnPropertyChanged(nameof(ShowReconnect));
         UpdateMissingEarbudPolling();
         if (state == HeadsetConnectionState.Connected)
         {

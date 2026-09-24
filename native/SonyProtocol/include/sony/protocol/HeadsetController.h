@@ -50,6 +50,8 @@ public:
     void setEqualizerPreset(int preset);
     void setEqualizerCustom(int clearBass, const std::array<int, 5>& bands);
     void setDsee(bool enabled);
+    // Turns the headset off. The link drops afterwards, like any other disconnect.
+    void powerOff();
     void setSpeakToChat(bool enabled);
     void setAdaptiveVolume(bool enabled);
     void setAutoPowerOff(int index);

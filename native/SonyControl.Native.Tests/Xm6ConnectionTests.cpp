@@ -169,6 +169,10 @@ TEST_F(Xm6Connection, SettersSendV2Bytes) {
     controller->setAutoPowerOff(2);
     EXPECT_EQ(headset->requests().back(), (Payload{0x28, 0x05, 0x01, 0x01}));
 
+    headset->reply();
+    controller->powerOff();
+    EXPECT_EQ(headset->requests().back(), (Payload{0x24, 0x03, 0x01}));
+
     const DeviceState state = controller->state();
     EXPECT_EQ(state.equalizer.preset, 0xa0);
     EXPECT_EQ(state.equalizer.clearBass, 3);

@@ -65,35 +65,111 @@ public sealed class HeadsetManagerTests
     }
 
     [TestMethod]
-    public void PairedButDisconnectedHeadsetIsNotListed()
+    public async Task PairedButDisconnectedHeadsetIsListedWithoutConnecting()
     {
         _source.Report(Xm6 with { IsConnected = false });
+        await Task.Delay(50);
 
-        Assert.AreEqual(0, _manager.Headsets.Count);
+        Assert.AreEqual(1, _manager.Headsets.Count);
+        Assert.IsFalse(_manager.Headsets[0].IsWindowsConnected);
+        Assert.AreEqual(HeadsetConnectionState.Disconnected, _manager.Headsets[0].ConnectionState);
+        Assert.AreEqual(0, _created["WF-1000XM6"].ConnectAttempts);
     }
 
     [TestMethod]
-    public void WindowsDisconnectRemovesAndDisposesHeadset()
+    public async Task WindowsDisconnectKeepsHeadsetAndDropsTheLink()
+    {
+        var removed = false;
+        _manager.HeadsetRemoved += (_, _) => removed = true;
+        _source.Report(Xm6);
+        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
+
+        _source.Report(Xm6 with { IsConnected = false });
+
+        Assert.IsFalse(removed);
+        Assert.AreEqual(1, _manager.Headsets.Count);
+        Assert.IsFalse(_manager.Headsets[0].IsWindowsConnected);
+        Assert.AreEqual(HeadsetConnectionState.Disconnected, _manager.Headsets[0].ConnectionState);
+        Assert.AreEqual(1, _created["WF-1000XM6"].DisconnectCalls);
+        Assert.IsFalse(_created["WF-1000XM6"].IsDisposed);
+    }
+
+    [TestMethod]
+    public async Task WindowsReconnectingAKnownHeadsetConnectsAgain()
+    {
+        _source.Report(Xm6);
+        var headset = _created["WF-1000XM6"];
+        Assert.IsTrue(await TestWait.UntilAsync(() => headset.ConnectAttempts == 1));
+        _source.Report(Xm6 with { IsConnected = false });
+
+        _source.Report(Xm6);
+
+        Assert.IsTrue(_manager.Headsets[0].IsWindowsConnected);
+        Assert.IsTrue(await TestWait.UntilAsync(() => headset.ConnectAttempts == 2));
+        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
+    }
+
+    [TestMethod]
+    public async Task ReleaseDropsTheLinkAndStaysOffUntilReconnect()
+    {
+        _source.Report(Xm6);
+        var headset = _created["WF-1000XM6"];
+        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
+
+        _manager.Release("AC:80:0A:00:00:06");
+
+        Assert.AreEqual(HeadsetConnectionState.Disconnected, _manager.Headsets[0].ConnectionState);
+        Assert.AreEqual(1, headset.DisconnectCalls);
+        Assert.IsFalse(_settings.IsAutoConnectEnabled("AC:80:0A:00:00:06"), "release isn't remembered");
+
+        // Windows dropping and reconnecting the headset doesn't bring the app back
+        _source.Report(Xm6 with { IsConnected = false });
+        _source.Report(Xm6);
+        _time.Advance(TimeSpan.FromMinutes(1));
+        await Task.Delay(50);
+        Assert.AreEqual(1, headset.ConnectAttempts);
+    }
+
+    [TestMethod]
+    public async Task ReconnectingAReleasedHeadsetTurnsAutoConnectBackOn()
+    {
+        _settings.SetAutoConnectEnabled("AC:80:0A:00:00:06", false);
+        _source.Report(Xm6);
+
+        _manager.Reconnect("AC:80:0A:00:00:06");
+
+        Assert.IsTrue(_settings.IsAutoConnectEnabled("AC:80:0A:00:00:06"));
+        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
+    }
+
+    [TestMethod]
+    public async Task ReconnectWhileWindowsHasItDisconnectedTriesOnce()
+    {
+        _source.Report(Xm6 with { IsConnected = false });
+        var headset = _created["WF-1000XM6"];
+        headset.ConnectFailures.Enqueue(new COMException("timeout", HeadsetErrorMessages.TimeoutHResult));
+
+        _manager.Reconnect("AC:80:0A:00:00:06");
+        Assert.IsTrue(await TestWait.UntilAsync(() => headset.ConnectAttempts == 1));
+        _time.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(50);
+
+        Assert.AreEqual(1, headset.ConnectAttempts);
+        Assert.AreEqual(HeadsetConnectionState.Disconnected, _manager.Headsets[0].ConnectionState);
+    }
+
+    [TestMethod]
+    public void UnpairingRemovesAndDisposesHeadset()
     {
         ManagedHeadset? removed = null;
         _manager.HeadsetRemoved += (_, headset) => removed = headset;
         _source.Report(Xm6);
 
-        _source.Report(Xm6 with { IsConnected = false });
+        _source.Remove(Xm6.Id);
 
         Assert.IsNotNull(removed);
         Assert.AreEqual(0, _manager.Headsets.Count);
         Assert.IsTrue(_created["WF-1000XM6"].IsDisposed);
-    }
-
-    [TestMethod]
-    public void UnpairingRemovesHeadset()
-    {
-        _source.Report(Xm6);
-
-        _source.Remove(Xm6.Id);
-
-        Assert.AreEqual(0, _manager.Headsets.Count);
     }
 
     [TestMethod]
@@ -168,17 +244,6 @@ public sealed class HeadsetManagerTests
     }
 
     [TestMethod]
-    public async Task ReconnectConnectsEvenWithAutoConnectOff()
-    {
-        _settings.SetAutoConnectEnabled("AC:80:0A:00:00:06", false);
-        _source.Report(Xm6);
-
-        _manager.Reconnect("AC:80:0A:00:00:06");
-
-        Assert.IsTrue(await TestWait.UntilAsync(() => _manager.Headsets[0].ConnectionState == HeadsetConnectionState.Connected));
-    }
-
-    [TestMethod]
     public async Task TurningAutoConnectOffDisconnects()
     {
         _source.Report(Xm6);
@@ -195,8 +260,6 @@ public sealed class HeadsetManagerTests
     public async Task ReconnectWhileConnectingWaitsForInFlightAttempt()
     {
         var gate = new TaskCompletionSource();
-        _source.Report(Xm6 with { IsConnected = false });
-        _created.Clear();
         _source.Report(Xm6);
         var headset = _created["WF-1000XM6"];
         Assert.IsTrue(await TestWait.UntilAsync(() => headset.ConnectAttempts == 1));

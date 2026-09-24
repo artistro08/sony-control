@@ -145,6 +145,9 @@ public partial class App : Application, IDisposable
             _settingsWindow = new SettingsWindow(_settingsViewModel);
             _settingsWindow.ApplyTheme(_settings.Theme);
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+
+            // Open on the flyout's headphones; once open, the window keeps its own choice
+            _settingsViewModel.SelectCurrentHeadset();
         }
         _settingsWindow.Activate();
     }

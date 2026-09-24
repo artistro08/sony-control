@@ -19,20 +19,25 @@
                 <ItemsRepeater.ItemTemplate>
                     <DataTemplate x:DataType="vm:SceneEditorViewModel">
                         <Border Style="{StaticResource SettingsCardStyle}">
-                            <Grid ColumnDefinitions="Auto,*,*,Auto" ColumnSpacing="16" RowDefinitions="Auto,Auto" RowSpacing="8">
+                            <Grid ColumnDefinitions="Auto,*,1.4*,Auto" ColumnSpacing="16" RowDefinitions="Auto,Auto">
+                                <!-- Icon, in the card's top-left corner -->
                                 <FontIcon
-                                    Grid.RowSpan="2"
-                                    VerticalAlignment="Center"
+                                    VerticalAlignment="Top"
                                     FontSize="20"
                                     Glyph="{x:Bind Glyph}" />
+
+                                <!-- Name, mode and Focus on voice. Top-aligned so the name box keeps
+                                     its own height instead of stretching to the switch's row. -->
                                 <TextBox
                                     Grid.Column="1"
+                                    VerticalAlignment="Top"
                                     AutomationProperties.Name="Scene name"
                                     Header="Name"
                                     Text="{x:Bind Name, Mode=TwoWay}" />
                                 <ComboBox
                                     Grid.Column="2"
                                     HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Top"
                                     AutomationProperties.Name="Noise control mode"
                                     Header="Noise control"
                                     ItemsSource="{x:Bind vm:SceneEditorViewModel.ModeOptions}"
@@ -41,18 +46,32 @@
                                     Grid.Column="3"
                                     AutomationProperties.Name="Focus on voice"
                                     Header="Focus on voice"
-                                    IsOn="{x:Bind FocusOnVoice, Mode=TwoWay}" />
-                                <Slider
+                                    IsOn="{x:Bind FocusOnVoice, Mode=TwoWay}"
+                                    Style="{StaticResource CardToggleSwitchStyle}" />
+
+                                <!-- Ambient Level: under a separator, with ticks and the number like the flyout -->
+                                <StackPanel
                                     Grid.Row="1"
-                                    Grid.Column="1"
-                                    Grid.ColumnSpan="3"
-                                    AutomationProperties.Name="Ambient sound level"
-                                    Header="Ambient sound level"
-                                    Maximum="20"
-                                    Minimum="1"
-                                    StepFrequency="1"
-                                    Value="{x:Bind AmbientLevel, Mode=TwoWay}"
-                                    Visibility="{x:Bind IsAmbient, Mode=OneWay}" />
+                                    Grid.ColumnSpan="4"
+                                    Margin="0,12,0,0"
+                                    Spacing="12"
+                                    Visibility="{x:Bind IsAmbient, Mode=OneWay}">
+                                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                                    <StackPanel>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="Ambient sound level" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind AmbientLevelText, Mode=OneWay}" />
+                                        </Grid>
+                                        <Slider
+                                            AutomationProperties.Name="Ambient sound level"
+                                            Maximum="20"
+                                            Minimum="1"
+                                            StepFrequency="1"
+                                            TickFrequency="1"
+                                            TickPlacement="Outside"
+                                            Value="{x:Bind AmbientLevel, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -76,10 +95,7 @@
                 Style="{StaticResource BodyStrongTextBlockStyle}"
                 Text="Headphones" />
             <local:HeadsetSelector ViewModel="{x:Bind ViewModel}" />
-            <Border
-                IsHitTestVisible="{x:Bind ViewModel.SelectedHeadset.IsConnected, Mode=OneWay}"
-                Style="{StaticResource SettingsCardStyle}"
-                Visibility="{x:Bind ViewModel.SelectedHeadset.Features.SpeakToChat, Mode=OneWay}">
+            <Border Style="{StaticResource SettingsCardStyle}" Visibility="{x:Bind ViewModel.SelectedHeadset.Features.SpeakToChat, Mode=OneWay}">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Speak-to-Chat" />
@@ -88,7 +104,9 @@
                     <ToggleSwitch
                         Grid.Column="1"
                         AutomationProperties.Name="Speak-to-Chat"
-                        IsOn="{x:Bind ViewModel.SelectedHeadset.SpeakToChat, Mode=TwoWay}" />
+                        IsEnabled="{x:Bind ViewModel.SelectedHeadset.IsConnected, Mode=OneWay, FallbackValue=False}"
+                        IsOn="{x:Bind ViewModel.SelectedHeadset.SpeakToChat, Mode=TwoWay}"
+                        Style="{StaticResource CardToggleSwitchStyle}" />
                 </Grid>
             </Border>
         </StackPanel>

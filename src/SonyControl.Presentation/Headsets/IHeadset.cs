@@ -40,6 +40,11 @@ public interface IHeadset : IDisposable
 
     Task SetDseeAsync(bool enabled);
 
+    /// <summary>
+    /// Turns the headset off. The control link drops afterwards.
+    /// </summary>
+    Task PowerOffAsync();
+
     Task SetSpeakToChatAsync(bool enabled);
 
     Task SetAdaptiveVolumeAsync(bool enabled);

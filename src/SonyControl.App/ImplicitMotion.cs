@@ -19,6 +19,29 @@ public static class ImplicitMotion
     private static readonly TimeSpan MoveDuration = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan FadeDuration = TimeSpan.FromMilliseconds(167);
 
+    // Every glide, so they can be paused together
+    private static readonly List<(Visual Visual, ImplicitAnimationCollection Animations)> Glides = [];
+
+    /// <summary>
+    /// Stops the glides, e.g. while the window resizes, which moves everything but shouldn't
+    /// animate. Fades keep working.
+    /// </summary>
+    public static void Pause()
+    {
+        foreach (var (visual, _) in Glides)
+        {
+            visual.ImplicitAnimations = null;
+        }
+    }
+
+    public static void Resume()
+    {
+        foreach (var (visual, animations) in Glides)
+        {
+            visual.ImplicitAnimations = animations;
+        }
+    }
+
     public static void Attach(UIElement element)
     {
         var visual = ElementCompositionPreview.GetElementVisual(element);
@@ -33,6 +56,7 @@ public static class ImplicitMotion
         var implicitAnimations = compositor.CreateImplicitAnimationCollection();
         implicitAnimations["Offset"] = move;
         visual.ImplicitAnimations = implicitAnimations;
+        Glides.Add((visual, implicitAnimations));
 
         // Fade In And Out
         var show = compositor.CreateScalarKeyFrameAnimation();

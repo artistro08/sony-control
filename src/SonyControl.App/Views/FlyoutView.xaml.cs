@@ -13,22 +13,33 @@ namespace SonyControl.App.Views;
 /// </summary>
 public sealed partial class FlyoutView : UserControl
 {
+    private bool _deviceVisible;
+
     public FlyoutView(FlyoutViewModel viewModel)
     {
         ViewModel = viewModel;
+        _deviceVisible = viewModel.IsDeviceVisible;
         InitializeComponent();
 
-        // Pages, footer and every row of the device page (one level into its sections) fade
-        // in and out and glide when the layout around them changes
+        // Pages, footer and every row of the device page (one level into its sections, including
+        // the ones wrapped for their disabled state) fade in and out and glide when the layout
+        // around them changes
         foreach (var element in ContentRoot.Children.Concat(DevicePanel.Children))
         {
             ImplicitMotion.Attach(element);
-            if (element is Panel section && element != DevicePanel)
+            var section = element switch
             {
-                foreach (var row in section.Children)
-                {
-                    ImplicitMotion.Attach(row);
-                }
+                ContentControl { Content: Panel wrapped } => wrapped,
+                Panel panel when element != DevicePanel => panel,
+                _ => null,
+            };
+            if (section is null)
+            {
+                continue;
+            }
+            foreach (var row in section.Children)
+            {
+                ImplicitMotion.Attach(row);
             }
         }
 
@@ -40,6 +51,15 @@ public sealed partial class FlyoutView : UserControl
             if (e.PropertyName == nameof(FlyoutViewModel.HasDefaultHeadset))
             {
                 UpdateHeadsetListTransitions();
+            }
+
+            // Switching pages hides the focused button (Back, a picker row), and WinUI hands
+            // keyboard focus to the next button, which pops its tooltip. Take focus quietly
+            // instead; programmatic focus shows neither a tooltip nor a focus rectangle.
+            if (e.PropertyName == nameof(FlyoutViewModel.IsDeviceVisible) && ViewModel.IsDeviceVisible != _deviceVisible)
+            {
+                _deviceVisible = ViewModel.IsDeviceVisible;
+                Focus(FocusState.Programmatic);
             }
         };
     }

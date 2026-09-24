@@ -137,6 +137,18 @@ void HeadsetController::setEqualizerCustom(int clearBass, const std::array<int, 
     });
 }
 
+void HeadsetController::powerOff() {
+    // The headset can switch off before it acknowledges; that's the goal, not a failure,
+    // so no retry and no "stopped answering" handling here
+    try {
+        _protocol->powerOff();
+    } catch (const SonyException& ex) {
+        if (ex.code() != SonyErrorCode::Timeout && ex.code() != SonyErrorCode::Disconnected) {
+            throw;
+        }
+    }
+}
+
 void HeadsetController::setDsee(bool enabled) {
     command([&] { _protocol->setDsee(enabled); });
     updateState([&](DeviceState& state) { state.dsee = enabled; });

@@ -250,6 +250,11 @@ bool ProtocolV2::getDsee() {
     throw SonyException(SonyErrorCode::InvalidResponse, "Incomplete Dsee response");
 }
 
+void ProtocolV2::powerOff() {
+    // SET: 24 03 01 (POWER_SET_STATUS, POWER_OFF, USER_POWER_OFF)
+    _session.send(SonyFrame{ .type = DataType::DataMdr, .payload = {0x24, 0x03, 0x01} });
+}
+
 void ProtocolV2::setDsee(bool enabled) {
     // SET: e8 01 <enabled 0/1>
     std::vector<uint8_t> payload = {

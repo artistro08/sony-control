@@ -123,6 +123,8 @@ internal sealed class FakeHeadset : IHeadset
 
     public Task SetEqualizerCustomAsync(EqualizerSetting value) => Command(value, state => state with { Equalizer = value });
 
+    public Task PowerOffAsync() => Command("power off", state => state);
+
     public Task SetDseeAsync(bool enabled) => Command(("dsee", enabled), state => state with { Dsee = enabled });
 
     public Task SetSpeakToChatAsync(bool enabled) => Command(("speakToChat", enabled), state => state with { SpeakToChat = enabled });
