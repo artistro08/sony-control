@@ -21,11 +21,14 @@ namespace SonyControl.App;
 /// </remarks>
 internal sealed partial class TrayTooltipWindow : Window
 {
+    // Distance from the pointer's hot spot, about a cursor's height, as Windows' tooltips sit
+    private const double PointerGapDip = 20;
+
     private readonly TrayTooltip _tooltip = new();
     private readonly FlyoutViewModel _flyout;
     private readonly IntPtr _hwnd;
     private readonly DispatcherQueueTimer _delay;
-    private (int X, int Y, TaskbarEdge Edge, PixelRect WorkArea, double Scale)? _pending;
+    private (TaskbarEdge Edge, PixelRect WorkArea, double Scale)? _pending;
 
     public TrayTooltipWindow(FlyoutViewModel flyout)
     {
@@ -56,12 +59,12 @@ internal sealed partial class TrayTooltipWindow : Window
     }
 
     /// <summary>
-    /// Opens the tooltip after Windows' tooltip delay at a screen point (physical pixels),
-    /// growing away from the taskbar and kept inside the work area.
+    /// Opens the tooltip at the mouse after Windows' tooltip delay: centered on the pointer,
+    /// on its side away from the taskbar, and kept inside the work area (physical pixels).
     /// </summary>
-    public void ShowAt(int x, int y, TaskbarEdge edge, PixelRect workArea, double scale)
+    public void Open(TaskbarEdge edge, PixelRect workArea, double scale)
     {
-        _pending = (x, y, edge, workArea, scale);
+        _pending = (edge, workArea, scale);
         _delay.Start();
     }
 
@@ -92,7 +95,8 @@ internal sealed partial class TrayTooltipWindow : Window
             return;
         }
         _pending = null;
-        var (x, y, edge, workArea, scale) = pending;
+        var (edge, workArea, scale) = pending;
+        NativeMethods.GetCursorPos(out var pointer);
 
         _tooltip.SetHeadsets(_flyout.ConnectedHeadsets);
 
@@ -102,14 +106,15 @@ internal sealed partial class TrayTooltipWindow : Window
         var width = (int)Math.Ceiling(_tooltip.DesiredSize.Width * scale) - (2 * margin);
         var height = (int)Math.Ceiling(_tooltip.DesiredSize.Height * scale) - (2 * margin);
 
-        // Right edge at the icon for a top or bottom taskbar; on a side taskbar it grows up from
-        // the icon, like the right-click menu
+        // Like any tooltip: a pointer's height away from the mouse, on the side facing away from
+        // the taskbar; centered on it along the taskbar
+        var gap = (int)Math.Round(PointerGapDip * scale);
         var (left, top) = edge switch
         {
-            TaskbarEdge.Top => (x - width, y),
-            TaskbarEdge.Left => (x, y - height),
-            TaskbarEdge.Right => (x - width, y - height),
-            _ => (x - width, y - height),
+            TaskbarEdge.Top => (pointer.X - (width / 2), pointer.Y + gap),
+            TaskbarEdge.Left => (pointer.X + gap, pointer.Y - (height / 2)),
+            TaskbarEdge.Right => (pointer.X - gap - width, pointer.Y - (height / 2)),
+            _ => (pointer.X - (width / 2), pointer.Y - gap - height),
         };
         left = Math.Clamp(left, workArea.Left, Math.Max(workArea.Left, workArea.Right - width));
         top = Math.Clamp(top, workArea.Top, Math.Max(workArea.Top, workArea.Bottom - height));

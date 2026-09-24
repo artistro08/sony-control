@@ -147,9 +147,9 @@ public partial class App : Application, IDisposable
             return;
         }
 
-        // Anchored at the icon's middle, pushed off the taskbar like the right-click menu
-        var (x, y, edge, workArea, scale) = ScreenGeometry.GetMenuAnchor((icon.Left + icon.Right) / 2, (icon.Top + icon.Bottom) / 2);
-        _trayTooltip.ShowAt(x, y, edge, workArea, scale);
+        // Taskbar side and work area of the icon's monitor; the tooltip itself follows the mouse
+        var (_, _, edge, workArea, scale) = ScreenGeometry.GetMenuAnchor((icon.Left + icon.Right) / 2, (icon.Top + icon.Bottom) / 2);
+        _trayTooltip.Open(edge, workArea, scale);
     }
 
     private void ShowSettings()
