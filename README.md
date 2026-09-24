@@ -96,8 +96,3 @@ $env:SONY_TEST_XM6_ADDRESS = "AC:80:0A:12:34:56"
 MIT, see [LICENSE](LICENSE). The Bluetooth protocol code is based on [sony-device-center](https://github.com/marconvcm/sony-device-center), also MIT; its notice is in [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY).
 
 > Sony and the product names are trademarks of Sony Group Corporation. This is an unofficial app, not made or endorsed by Sony.
-
-## Documentation
-
-- Design: [docs/superpowers/specs/2026-09-23-sony-control-design.md](docs/superpowers/specs/2026-09-23-sony-control-design.md)
-- Plan: [docs/superpowers/plans/2026-09-23-sony-control.md](docs/superpowers/plans/2026-09-23-sony-control.md)
