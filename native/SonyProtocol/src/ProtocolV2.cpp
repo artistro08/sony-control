@@ -370,4 +370,62 @@ void ProtocolV2::setAdaptiveVolume(bool enabled) {
     _session.send(SonyFrame{ .type = DataType::DataMdr, .payload = std::move(payload) });
 }
 
+// =========================================================================
+// PLAYBACK (MULTIPOINT)
+// =========================================================================
+
+std::vector<PlaybackDevice> ProtocolV2::getPlaybackDevices() {
+    // Which list layout, if any: T2 GET 06 00 -> RET 07 00 <functions>, read once per link
+    if (!_pairedDevicesType) {
+        auto resp = _session.sendAndAwaitResponse(
+            SonyFrame{ .type = DataType::DataMdrNo2, .payload = {0x06, 0x00} },
+            0x07,
+            0x00,
+            std::chrono::milliseconds(1000)
+        );
+        const auto functions = parseSupportFunctions(resp.payload).value_or(std::vector<uint8_t>{});
+        const auto has = [&](uint8_t function) { return std::ranges::find(functions, function) != functions.end(); };
+        if (!has(kT2SourceSwitch)) {
+            _pairedDevicesType = 0xff;
+        } else if (has(kT2PairedDevicesWithClass) || has(kT2PairedDevicesWithClassLe)) {
+            _pairedDevicesType = kPeripheralPairedDevicesWithClass;
+        } else {
+            _pairedDevicesType = kPeripheralPairedDevices;
+        }
+    }
+    if (*_pairedDevicesType == 0xff) {
+        throw SonyException(SonyErrorCode::Unsupported, "Headset doesn't support source switching");
+    }
+
+    // T2 GET 36 <type> -> RET 37 <type> <devices> <playing slot>
+    auto resp = _session.sendAndAwaitResponse(
+        SonyFrame{ .type = DataType::DataMdrNo2, .payload = {0x36, *_pairedDevicesType} },
+        0x37,
+        *_pairedDevicesType,
+        std::chrono::milliseconds(1000)
+    );
+    auto devices = parsePlaybackDevices(resp.payload);
+    if (!devices) {
+        throw SonyException(SonyErrorCode::InvalidResponse, "Malformed paired-device list");
+    }
+    return *devices;
+}
+
+void ProtocolV2::switchPlayback(const std::string& address) {
+    // T2 SET 3c 01 <address> -> NTFY 3d 01 <result> <address>. The headset hands the audio
+    // over first, so the answer can take a few seconds.
+    std::vector<uint8_t> payload = {0x3c, kPeripheralSourceSwitch};
+    payload.insert(payload.end(), address.begin(), address.end());
+    auto resp = _session.sendAndAwaitResponse(
+        SonyFrame{ .type = DataType::DataMdrNo2, .payload = std::move(payload) },
+        0x3d,
+        kPeripheralSourceSwitch,
+        std::chrono::milliseconds(5000)
+    );
+    const auto result = parsePlaybackSwitch(resp.payload);
+    if (!result || !result->succeeded) {
+        throw SonyException(SonyErrorCode::InvalidResponse, "Headset refused to switch playback");
+    }
+}
+
 } // namespace sony::protocol

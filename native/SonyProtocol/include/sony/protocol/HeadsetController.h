@@ -55,6 +55,9 @@ public:
     void setSpeakToChat(bool enabled);
     void setAdaptiveVolume(bool enabled);
     void setAutoPowerOff(int index);
+    // Multipoint: moves playback to the connected device with this address. Throws
+    // InvalidResponse when the headset refuses (on a call, say).
+    void switchPlayback(const std::string& address);
 
     // Called after every confirmed state change. Runs on the calling thread for
     // commands and on the session reader thread for notifications.
@@ -82,6 +85,8 @@ private:
     void handleNotification(const SonyFrame& frame);
     // Call with _stateMutex held.
     bool applyV2Notification(const std::vector<uint8_t>& payload);
+    // Call with _stateMutex held. Second command table (DataMdrNo2): the multipoint list.
+    bool applyTable2Notification(const std::vector<uint8_t>& payload);
     void updateState(const std::function<void(DeviceState&)>& mutation);
     void publish(const DeviceState& snapshot);
 

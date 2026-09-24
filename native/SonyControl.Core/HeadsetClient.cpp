@@ -246,6 +246,20 @@ Core::HeadsetState HeadsetClient::State() const {
     return toHeadsetState(m_controller->state());
 }
 
+com_array<Core::PlaybackDeviceInfo> HeadsetClient::GetPlaybackDevices() const {
+    const auto devices = m_controller->state().playbackDevices;
+
+    com_array<Core::PlaybackDeviceInfo> result(static_cast<uint32_t>(devices.size()));
+    for (size_t i = 0; i < devices.size(); ++i) {
+        result[static_cast<uint32_t>(i)] = Core::PlaybackDeviceInfo{
+            to_hstring(devices[i].address),
+            to_hstring(devices[i].name),
+            devices[i].playing,
+        };
+    }
+    return result;
+}
+
 // =========================================================================
 // COMMANDS
 // =========================================================================
@@ -300,6 +314,12 @@ IAsyncAction HeadsetClient::SetAdaptiveVolumeAsync(bool enabled) {
 
 IAsyncAction HeadsetClient::SetAutoPowerOffAsync(int32_t index) {
     return RunAsync([index](sony::protocol::HeadsetController& controller) { controller.setAutoPowerOff(index); });
+}
+
+IAsyncAction HeadsetClient::SwitchPlaybackAsync(hstring address) {
+    return RunAsync([address = to_string(address)](sony::protocol::HeadsetController& controller) {
+        controller.switchPlayback(address);
+    });
 }
 
 IAsyncAction HeadsetClient::RunAsync(Command command) {

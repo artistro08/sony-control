@@ -99,6 +99,13 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         });
         ApplyCustomEqualizerCommand = new AsyncRelayCommand(ApplyCustomEqualizerAsync);
         PowerOffCommand = new AsyncRelayCommand(() => RunCommandAsync(_headset.PowerOffAsync, "power"));
+        SwitchPlaybackCommand = new RelayCommand<PlaybackDevice>(device =>
+        {
+            if (device is not null)
+            {
+                SwitchPlayback(device);
+            }
+        });
         DisconnectCommand = new RelayCommand(() => AutoConnect = false);
         ReconnectCommand = new RelayCommand(() => ReconnectRequested?.Invoke(this, EventArgs.Empty));
 
@@ -394,6 +401,26 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand PowerOffCommand { get; }
 
     // =========================================================================
+    // PLAYBACK
+    // =========================================================================
+
+    /// <summary>
+    /// Devices connected to the headset (multipoint), for moving the audio between them.
+    /// Empty when the headset can't switch.
+    /// </summary>
+    public IReadOnlyList<PlaybackDevice> PlaybackDevices { get; private set; } = [];
+
+    /// <summary>
+    /// The Playback section shows while connected with at least two devices to choose from.
+    /// </summary>
+    public bool ShowPlayback => IsConnected && PlaybackDevices.Count >= 2;
+
+    /// <summary>
+    /// Moves the audio to the given device; the one already playing is left alone.
+    /// </summary>
+    public IRelayCommand<PlaybackDevice> SwitchPlaybackCommand { get; }
+
+    // =========================================================================
     // SYSTEM
     // =========================================================================
 
@@ -542,6 +569,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowStatus));
         OnPropertyChanged(nameof(ShowDisconnectedWarning));
         OnPropertyChanged(nameof(ShowReconnect));
+        OnPropertyChanged(nameof(ShowPlayback));
         UpdateMissingEarbudPolling();
         if (state == HeadsetConnectionState.Connected)
         {
@@ -638,6 +666,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         {
             _applying = false;
         }
+        SetPlaybackDevices(snapshot.PlaybackDevices);
 
         RaiseNoiseModeChanged();
         OnPropertyChanged(nameof(AmbientLevelText));
@@ -657,6 +686,32 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StatusText));
 
         _lowBattery.Update(Id, DeviceName, snapshot.Battery);
+    }
+
+    private void SwitchPlayback(PlaybackDevice device)
+    {
+        if (device.Playing)
+        {
+            return;
+        }
+
+        // Show it straight away; a refusal (on a call, say) puts the headset's answer back
+        SetPlaybackDevices([.. PlaybackDevices.Select(item => item with { Playing = item.Address == device.Address })]);
+        _ = RunCommandAsync(
+            () => _headset.SwitchPlaybackAsync(device.Address),
+            "playback",
+            "Couldn't switch the audio. The other device may be on a call.");
+    }
+
+    private void SetPlaybackDevices(IReadOnlyList<PlaybackDevice> devices)
+    {
+        if (devices.SequenceEqual(PlaybackDevices))
+        {
+            return;
+        }
+        PlaybackDevices = devices;
+        OnPropertyChanged(nameof(PlaybackDevices));
+        OnPropertyChanged(nameof(ShowPlayback));
     }
 
     private void RaiseNoiseModeChanged()
@@ -709,7 +764,9 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         return RunCommandAsync(() => _headset.SetEqualizerCustomAsync(setting), "custom equalizer");
     }
 
-    private async Task RunCommandAsync(Func<Task> command, string setting)
+    // refusedMessage replaces the generic text when the headset answers "no" (a refused
+    // multipoint switch comes back as an invalid-data error)
+    private async Task RunCommandAsync(Func<Task> command, string setting, string? refusedMessage = null)
     {
         try
         {
@@ -721,7 +778,9 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
             _ui.Post(() =>
             {
                 ApplySnapshot(_headset.State);
-                ShowError(HeadsetErrorMessages.Describe(ex));
+                ShowError(refusedMessage is not null && ex.HResult == HeadsetErrorMessages.InvalidDataHResult
+                    ? refusedMessage
+                    : HeadsetErrorMessages.Describe(ex));
             });
         }
     }

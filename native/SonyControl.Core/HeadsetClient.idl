@@ -79,6 +79,14 @@ namespace SonyControl.Core
         String Codec;
     };
 
+    // A device connected to the headset (multipoint), and whether it has playback.
+    struct PlaybackDeviceInfo
+    {
+        String Address;
+        String Name;
+        Boolean Playing;
+    };
+
     struct EqualizerPresetInfo
     {
         Int32 Value;
@@ -105,6 +113,10 @@ namespace SonyControl.Core
         Boolean IsConnected { get; };
         HeadsetState State { get; };
 
+        // Devices connected to the headset, when it supports switching playback between
+        // them; empty otherwise. Read it again after StateChanged.
+        PlaybackDeviceInfo[] GetPlaybackDevices();
+
         Windows.Foundation.IAsyncAction ConnectAsync(String bluetoothAddress);
         void Disconnect();
         Windows.Foundation.IAsyncAction RefreshBatteryAsync();
@@ -116,6 +128,7 @@ namespace SonyControl.Core
         Windows.Foundation.IAsyncAction SetSpeakToChatAsync(Boolean enabled);
         Windows.Foundation.IAsyncAction SetAdaptiveVolumeAsync(Boolean enabled);
         Windows.Foundation.IAsyncAction SetAutoPowerOffAsync(Int32 index);
+        Windows.Foundation.IAsyncAction SwitchPlaybackAsync(String address);
 
         // Raised on a background thread after every confirmed change.
         event Windows.Foundation.TypedEventHandler<HeadsetClient, HeadsetState> StateChanged;

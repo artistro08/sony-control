@@ -36,6 +36,8 @@ struct HeadsetClient : HeadsetClientT<HeadsetClient> {
     Windows::Foundation::IAsyncAction SetSpeakToChatAsync(bool enabled);
     Windows::Foundation::IAsyncAction SetAdaptiveVolumeAsync(bool enabled);
     Windows::Foundation::IAsyncAction SetAutoPowerOffAsync(int32_t index);
+    Windows::Foundation::IAsyncAction SwitchPlaybackAsync(hstring address);
+    com_array<Core::PlaybackDeviceInfo> GetPlaybackDevices() const;
 
     event_token StateChanged(Windows::Foundation::TypedEventHandler<Core::HeadsetClient, Core::HeadsetState> const& handler);
     void StateChanged(event_token const& token) noexcept;

@@ -232,7 +232,8 @@ void SonyProtocolSession::_handleDecodedFrame(const SonyFrame& frame) {
         return;
     }
 
-    if (frame.type == DataType::DataMdr) {
+    // Both command tables: the main one and the second (DataMdrNo2, multipoint and power)
+    if (frame.type == DataType::DataMdr || frame.type == DataType::DataMdrNo2) {
         std::string desc = Logger::describePayload(frame.payload);
         if (!desc.empty()) {
             Logger::debug(LogCategory::Protocol, desc);
@@ -264,7 +265,8 @@ void SonyProtocolSession::_handleDecodedFrame(const SonyFrame& frame) {
         {
             std::lock_guard lock(_sessionMtx);
             if (_pendingRequest && !_pendingRequest->hasResponse) {
-                if (!frame.payload.empty() && frame.payload[0] == _pendingRequest->expectedOpcode) {
+                if (frame.type == _pendingRequest->expectedType && !frame.payload.empty() &&
+                    frame.payload[0] == _pendingRequest->expectedOpcode) {
                     if (_pendingRequest->expectedSubtype < 0 ||
                         (frame.payload.size() >= 2 && frame.payload[1] == static_cast<uint8_t>(_pendingRequest->expectedSubtype)))
                     {
@@ -348,7 +350,8 @@ void SonyProtocolSession::send(const SonyFrame& frame, std::chrono::milliseconds
     std::unique_lock sendLock(_sendMtx);
 
     SonyFrame toSend = frame;
-    if (toSend.type == DataType::DataMdr) {
+    // Both command tables share one sequence
+    if (toSend.type == DataType::DataMdr || toSend.type == DataType::DataMdrNo2) {
         toSend.sequence = nextSequenceNumber();
     }
 
@@ -388,7 +391,8 @@ SonyFrame SonyProtocolSession::sendAndAwaitResponse(
     std::unique_lock sendLock(_sendMtx);
 
     SonyFrame toSend = request;
-    if (toSend.type == DataType::DataMdr) {
+    // Both command tables share one sequence
+    if (toSend.type == DataType::DataMdr || toSend.type == DataType::DataMdrNo2) {
         toSend.sequence = nextSequenceNumber();
     }
 
@@ -397,6 +401,7 @@ SonyFrame SonyProtocolSession::sendAndAwaitResponse(
         _expectedAckSeq = toSend.sequence;
         _hasAck = false;
         _pendingRequest = PendingRequest{
+            .expectedType = request.type,
             .expectedOpcode = retOpcode,
             .expectedSubtype = retSubtype,
             .hasResponse = false,
@@ -407,7 +412,7 @@ SonyFrame SonyProtocolSession::sendAndAwaitResponse(
 
         // Check if matching response was already buffered in _unmatchedFrames
         for (auto it = _unmatchedFrames.begin(); it != _unmatchedFrames.end(); ++it) {
-            if (!it->payload.empty() && it->payload[0] == retOpcode) {
+            if (it->type == request.type && !it->payload.empty() && it->payload[0] == retOpcode) {
                 if (retSubtype < 0 || (it->payload.size() >= 2 && it->payload[1] == static_cast<uint8_t>(retSubtype))) {
                     _pendingRequest->response = *it;
                     _pendingRequest->hasResponse = true;

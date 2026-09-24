@@ -27,6 +27,15 @@ struct NoiseControlState {
     bool focusOnVoice{false};
 };
 
+// A device (PC, phone) connected to the headset over Bluetooth, for multipoint switching.
+struct PlaybackDevice {
+    std::string address;   // "AA:BB:CC:DD:EE:FF", as the headset reports it
+    std::string name;      // Bluetooth name the headset knows it by
+    bool playing{false};   // has the audio right now
+
+    bool operator==(const PlaybackDevice&) const = default;
+};
+
 struct EqualizerState {
     int preset{0};
     int clearBass{0};

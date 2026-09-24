@@ -82,6 +82,12 @@ public sealed record HeadsetSnapshot(
     string Firmware,
     string Codec)
 {
+    /// <summary>
+    /// Devices connected to the headset (multipoint), when it can switch playback between
+    /// them; empty when it can't.
+    /// </summary>
+    public IReadOnlyList<PlaybackDevice> PlaybackDevices { get; init; } = [];
+
     public static HeadsetSnapshot Empty { get; } = new(
         BatteryLevels.Unknown,
         new NoiseControlSetting(NoiseMode.Off, 0, false),
@@ -93,6 +99,11 @@ public sealed record HeadsetSnapshot(
         "",
         "");
 }
+
+/// <summary>
+/// A device (PC, phone) connected to the headset, and whether it has the audio.
+/// </summary>
+public sealed record PlaybackDevice(string Address, string Name, bool Playing);
 
 /// <summary>
 /// One entry in the equalizer preset picker.

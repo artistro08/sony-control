@@ -25,23 +25,22 @@
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
     </Style>
 
-    <!-- Noise Control Tiles -->
+    <!-- Noise Control Tiles: Quick Settings' tile button, 48 px tall with the standard control
+         corners and just the icon; the label sits underneath (NoiseModeTile) -->
     <Style x:Key="TileButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
         <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="Height" Value="64" />
-        <Setter Property="Padding" Value="4" />
-        <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
     </Style>
 
     <Style x:Key="TileButtonSelectedStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
         <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="Height" Value="64" />
-        <Setter Property="Padding" Value="4" />
-        <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
     </Style>
 
     <!-- Footer Buttons -->

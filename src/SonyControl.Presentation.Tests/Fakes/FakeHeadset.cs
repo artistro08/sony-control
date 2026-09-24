@@ -133,6 +133,11 @@ internal sealed class FakeHeadset : IHeadset
 
     public Task SetAutoPowerOffAsync(int index) => Command(("autoPowerOff", index), state => state with { AutoPowerOff = index });
 
+    public Task SwitchPlaybackAsync(string address) => Command(("switchPlayback", address), state => state with
+    {
+        PlaybackDevices = [.. state.PlaybackDevices.Select(device => device with { Playing = device.Address == address })],
+    });
+
     public void RaiseStateChanged(HeadsetSnapshot snapshot)
     {
         State = snapshot;

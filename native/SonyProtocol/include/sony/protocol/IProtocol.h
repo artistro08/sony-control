@@ -1,8 +1,10 @@
 #pragma once
 
 #include "SemanticTypes.h"
+#include "sony/transport/SonyError.h"
 #include <array>
 #include <string>
+#include <vector>
 
 namespace sony::protocol {
 
@@ -44,6 +46,15 @@ public:
 
     virtual bool getAdaptiveVolume() = 0;
     virtual void setAdaptiveVolume(bool enabled) = 0;
+
+    // Multipoint: devices connected to the headset and switching playback between them.
+    // Generations without it throw Unsupported.
+    virtual std::vector<PlaybackDevice> getPlaybackDevices() {
+        throw SonyException(SonyErrorCode::Unsupported, "Playback switching isn't supported");
+    }
+    virtual void switchPlayback(const std::string& /*address*/) {
+        throw SonyException(SonyErrorCode::Unsupported, "Playback switching isn't supported");
+    }
 };
 
 } // namespace sony::protocol

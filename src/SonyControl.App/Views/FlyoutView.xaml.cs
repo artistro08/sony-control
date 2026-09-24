@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using SonyControl.Presentation.Headsets;
 using SonyControl.Presentation.Scenes;
 using SonyControl.Presentation.ViewModels;
 
@@ -101,6 +102,15 @@ public sealed partial class FlyoutView : UserControl
         if (sender is Grid row)
         {
             row.Background = (Brush)row.Resources[brushKey];
+        }
+    }
+
+    private void OnPlaybackClick(object sender, RoutedEventArgs e)
+    {
+        // Device rides on Tag, like the scene buttons
+        if (sender is FrameworkElement { Tag: PlaybackDevice device })
+        {
+            ViewModel.CurrentHeadset?.SwitchPlaybackCommand.Execute(device);
         }
     }
 

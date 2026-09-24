@@ -6,7 +6,8 @@ using Microsoft.UI.Xaml.Media;
 namespace SonyControl.App.Views;
 
 /// <summary>
-/// Fluent plug icon, 16 px: plugged together for Reconnect, pulled apart for Disconnect.
+/// Fluent plug icon (16 px unless Size says otherwise): plugged together for Reconnect, pulled
+/// apart for Disconnect.
 /// </summary>
 /// <remarks>
 /// Paths are Fluent UI System Icons' plug_connected / plug_disconnected (20 regular, MIT),
@@ -14,6 +15,13 @@ namespace SonyControl.App.Views;
 /// </remarks>
 public sealed partial class PlugIcon : UserControl
 {
+    public static readonly DependencyProperty SizeProperty =
+        DependencyProperty.Register(nameof(Size), typeof(double), typeof(PlugIcon), new PropertyMetadata(16.0, (icon, e) =>
+        {
+            var viewbox = (Viewbox)((PlugIcon)icon).Content;
+            viewbox.Width = viewbox.Height = (double)e.NewValue;
+        }));
+
     public static readonly DependencyProperty IsConnectedProperty =
         DependencyProperty.Register(nameof(IsConnected), typeof(bool), typeof(PlugIcon), new PropertyMetadata(false, (icon, _) => ((PlugIcon)icon).Update()));
 
@@ -29,10 +37,19 @@ public sealed partial class PlugIcon : UserControl
 
     public PlugIcon()
     {
-        // The paths sit on a 20 px grid; the Viewbox brings them to the 16 px icon size
+        // The paths sit on a 20 px grid; the Viewbox scales them to Size (16 px by default)
         Content = new Viewbox { Width = 16, Height = 16, Child = _icon };
         IsTabStop = false;
         Update();
+    }
+
+    /// <summary>
+    /// Icon width and height in DIPs.
+    /// </summary>
+    public double Size
+    {
+        get => (double)GetValue(SizeProperty);
+        set => SetValue(SizeProperty, value);
     }
 
     public bool IsConnected

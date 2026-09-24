@@ -50,4 +50,10 @@ public interface IHeadset : IDisposable
     Task SetAdaptiveVolumeAsync(bool enabled);
 
     Task SetAutoPowerOffAsync(int index);
+
+    /// <summary>
+    /// Multipoint: moves playback to the connected device with this address. Fails when the
+    /// headset refuses (on a call, say).
+    /// </summary>
+    Task SwitchPlaybackAsync(string address);
 }

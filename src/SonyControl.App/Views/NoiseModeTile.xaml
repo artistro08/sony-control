@@ -1,0 +1,27 @@
+<UserControl
+    x:Class="SonyControl.App.Views.NoiseModeTile"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:app="using:SonyControl.App"
+    xmlns:local="using:SonyControl.App.Views">
+
+    <!-- Noise Mode Tile: built like a Windows Quick Settings tile, an icon-only button (accent
+         while selected) with its label underneath -->
+    <StackPanel Spacing="8">
+        <Button
+            HorizontalAlignment="Stretch"
+            AutomationProperties.Name="{x:Bind Label, Mode=OneWay}"
+            Command="{x:Bind Command, Mode=OneWay}"
+            CommandParameter="{x:Bind app:TileStyles.ModeName(Mode), Mode=OneWay}"
+            Style="{x:Bind app:TileStyles.Pick(IsSelected), Mode=OneWay}">
+            <!-- 20 px box: the drawing leaves a margin, so the visible icon is Quick Settings' 16 px -->
+            <local:NoiseModeIcon Mode="{x:Bind Mode, Mode=OneWay}" />
+        </Button>
+        <!-- Caption size (12), as under Quick Settings' tiles -->
+        <TextBlock
+            HorizontalAlignment="Center"
+            Style="{StaticResource CaptionTextBlockStyle}"
+            Text="{x:Bind Label, Mode=OneWay}"
+            TextTrimming="CharacterEllipsis" />
+    </StackPanel>
+</UserControl>

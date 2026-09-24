@@ -90,6 +90,7 @@ private:
 
     // Request/Response matching state
     struct PendingRequest {
+        DataType expectedType{DataType::DataMdr};   // replies come on the request's table
         uint8_t expectedOpcode{0};
         int expectedSubtype{-1};
         bool hasResponse{false};

@@ -4,6 +4,7 @@
 #include <memory>
 #include <map>
 #include <chrono>
+#include <vector>
 
 namespace sony::protocol {
 
@@ -29,6 +30,10 @@ struct DeviceState {
     int autoPowerOff{0};
     bool speakToChat{false};
     bool adaptiveVolume{false};
+
+    // Devices connected to the headset, when it supports switching playback between them.
+    // Empty when it doesn't, or when the list hasn't been read.
+    std::vector<PlaybackDevice> playbackDevices;
 };
 
 using DeviceStateSnapshot = std::shared_ptr<const DeviceState>;

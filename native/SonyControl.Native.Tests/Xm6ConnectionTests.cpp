@@ -331,3 +331,86 @@ TEST_F(Xm6Connection, ReconnectsAfterLinkDrop) {
     EXPECT_TRUE(controller->isConnected());
     EXPECT_EQ(controller->state().battery.left.value_or(-1), 85);
 }
+
+// =========================================================================
+// PLAYBACK (MULTIPOINT AUDIO SWITCHING)
+// =========================================================================
+
+TEST_F(Xm6Connection, ConnectReadsConnectedPlaybackDevices) {
+    connect();
+
+    const auto devices = controller->state().playbackDevices;
+    ASSERT_EQ(devices.size(), 2u); // the tablet is paired but not connected
+    EXPECT_EQ(devices[0].address, "AA:BB:CC:DD:EE:01");
+    EXPECT_EQ(devices[0].name, "DESKTOP");
+    EXPECT_TRUE(devices[0].playing);
+    EXPECT_EQ(devices[1].name, "Pixel 9");
+    EXPECT_FALSE(devices[1].playing);
+}
+
+TEST_F(Xm6Connection, PlaybackQueriesGoOverTable2) {
+    connect();
+
+    const auto requests = headset->requests();
+    const auto types = headset->requestTypes();
+    ASSERT_GE(requests.size(), 2u);
+    EXPECT_EQ(requests[requests.size() - 2], (Payload{0x06, 0x00}));
+    EXPECT_EQ(requests.back(), (Payload{0x36, 0x02}));
+    EXPECT_EQ(types.back(), DataType::DataMdrNo2);
+}
+
+TEST_F(Xm6Connection, SwitchPlaybackSendsTargetAndUpdatesState) {
+    connect();
+
+    Payload confirmed{0x3d, 0x01, 0x00};
+    const std::string phone = "AA:BB:CC:DD:EE:02";
+    confirmed.insert(confirmed.end(), phone.begin(), phone.end());
+    headset->replyTable2({confirmed});
+    controller->switchPlayback(phone);
+
+    Payload expected{0x3c, 0x01};
+    expected.insert(expected.end(), phone.begin(), phone.end());
+    EXPECT_EQ(headset->requests().back(), expected);
+    EXPECT_EQ(headset->requestTypes().back(), DataType::DataMdrNo2);
+    const auto devices = controller->state().playbackDevices;
+    EXPECT_FALSE(devices[0].playing);
+    EXPECT_TRUE(devices[1].playing);
+}
+
+TEST_F(Xm6Connection, RefusedSwitchThrowsAndKeepsState) {
+    connect();
+
+    Payload refused{0x3d, 0x01, 0x02}; // on a call
+    const std::string phone = "AA:BB:CC:DD:EE:02";
+    refused.insert(refused.end(), phone.begin(), phone.end());
+    headset->replyTable2({refused});
+
+    EXPECT_EQ(errorCodeOf([&] { controller->switchPlayback(phone); }), SonyErrorCode::InvalidResponse);
+    EXPECT_TRUE(controller->state().playbackDevices[0].playing);
+}
+
+TEST_F(Xm6Connection, PlaybackListNotificationUpdatesState) {
+    connect();
+    std::atomic<int> published{0};
+    controller->onStateChanged([&](const DeviceState&) { ++published; });
+
+    headset->notifyTable2(sony::test::xm6PlaybackDevices(2, 0x39));
+
+    ASSERT_TRUE(waitUntil([&] { return published.load() > 0; }));
+    const auto devices = controller->state().playbackDevices;
+    ASSERT_EQ(devices.size(), 2u);
+    EXPECT_TRUE(devices[1].playing);
+}
+
+TEST_F(Xm6Connection, ConnectSkipsPlaybackWhenSwitchingIsUnsupported) {
+    // Every reply up to the support list, which leaves out source switching (0x31)
+    auto transport = std::make_unique<FakeHeadset>();
+    auto* fake = transport.get();
+    controller = std::make_unique<HeadsetController>(std::move(transport), "WF-1000XM6");
+    sony::test::scriptXm6ConnectWithoutSwitching(*fake);
+
+    controller->connect(kTestAddress);
+
+    EXPECT_TRUE(controller->state().playbackDevices.empty());
+    EXPECT_NE(fake->requests().back(), (Payload{0x36, 0x02}));
+}

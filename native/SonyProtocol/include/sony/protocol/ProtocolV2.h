@@ -3,6 +3,7 @@
 #include "IProtocol.h"
 #include "SonyProtocolSession.h"
 #include <mutex>
+#include <optional>
 
 namespace sony::protocol {
 
@@ -44,6 +45,12 @@ public:
     bool getAdaptiveVolume() override;
     void setAdaptiveVolume(bool enabled) override;
 
+    // Multipoint, over the second command table (DataMdrNo2). Throws Unsupported when the
+    // headset's support list leaves out source switching.
+    std::vector<PlaybackDevice> getPlaybackDevices() override;
+    // Waits for the headset's answer; throws InvalidResponse when it refuses (on a call).
+    void switchPlayback(const std::string& address) override;
+
 private:
     SonyProtocolSession& _session;
     std::mutex _mutex;
@@ -51,6 +58,9 @@ private:
     // Noise control type the headset answered: 0x19 (WF-1000XM6) or 0x17 (upstream). 0 = not read yet.
     uint8_t _ncAsmType{0};
     int _lastAmbientLevel{10};
+    // Paired-device list type the headset supports (00 or 02), once its T2 support list
+    // has been read; nothing = not read yet, 0xff = no source switching.
+    std::optional<uint8_t> _pairedDevicesType;
 };
 
 } // namespace sony::protocol

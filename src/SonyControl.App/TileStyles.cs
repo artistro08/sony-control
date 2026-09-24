@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using SonyControl.Presentation.Headsets;
 
 namespace SonyControl.App;
 
@@ -12,4 +13,9 @@ public static class TileStyles
 
     public static Style PickScene(bool active) =>
         (Style)Application.Current.Resources[active ? "SceneButtonActiveStyle" : "SceneButtonStyle"];
+
+    /// <summary>
+    /// A noise mode as the text SetNoiseModeCommand takes.
+    /// </summary>
+    public static string ModeName(NoiseMode mode) => mode.ToString();
 }

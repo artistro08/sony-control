@@ -199,6 +199,77 @@ public sealed class HeadsetViewModelTests
     }
 
     [TestMethod]
+    public void PlaybackShowsWhenTwoDevicesAreConnected()
+    {
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = TwoDevices });
+
+        Assert.IsTrue(_viewModel.ShowPlayback);
+        Assert.AreEqual(2, _viewModel.PlaybackDevices.Count);
+        Assert.IsTrue(_viewModel.PlaybackDevices[0].Playing);
+    }
+
+    [TestMethod]
+    public void PlaybackHidesWithOneDeviceOrWithoutSupport()
+    {
+        Assert.IsFalse(_viewModel.ShowPlayback);
+
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = [TwoDevices[0]] });
+
+        Assert.IsFalse(_viewModel.ShowPlayback);
+    }
+
+    [TestMethod]
+    public void PlaybackHidesWhileDisconnected()
+    {
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = TwoDevices });
+
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+
+        Assert.IsFalse(_viewModel.ShowPlayback);
+    }
+
+    [TestMethod]
+    public void SwitchingPlaybackSendsTheDeviceAndMarksItPlaying()
+    {
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = TwoDevices });
+
+        _viewModel.SwitchPlaybackCommand.Execute(_viewModel.PlaybackDevices[1]);
+
+        CollectionAssert.Contains(_headset.Commands, ("switchPlayback", "AA:BB:CC:DD:EE:02"));
+        Assert.IsTrue(_viewModel.PlaybackDevices[1].Playing);
+        Assert.IsFalse(_viewModel.PlaybackDevices[0].Playing);
+    }
+
+    [TestMethod]
+    public void RefusedSwitchPutsPlaybackBackAndSaysWhy()
+    {
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = TwoDevices });
+        _headset.FailNextCommandWith = new COMException("refused", HeadsetErrorMessages.InvalidDataHResult);
+
+        _viewModel.SwitchPlaybackCommand.Execute(_viewModel.PlaybackDevices[1]);
+
+        Assert.IsTrue(_viewModel.PlaybackDevices[0].Playing);
+        Assert.IsFalse(_viewModel.PlaybackDevices[1].Playing);
+        Assert.AreEqual("Couldn't switch the audio. The other device may be on a call.", _viewModel.ErrorMessage);
+    }
+
+    [TestMethod]
+    public void SwitchingToTheDeviceAlreadyPlayingSendsNothing()
+    {
+        _headset.RaiseStateChanged(_headset.State with { PlaybackDevices = TwoDevices });
+
+        _viewModel.SwitchPlaybackCommand.Execute(_viewModel.PlaybackDevices[0]);
+
+        Assert.AreEqual(0, _headset.Commands.Count);
+    }
+
+    private static PlaybackDevice[] TwoDevices { get; } =
+    [
+        new PlaybackDevice("AA:BB:CC:DD:EE:01", "DESKTOP", true),
+        new PlaybackDevice("AA:BB:CC:DD:EE:02", "Pixel 9", false),
+    ];
+
+    [TestMethod]
     public void EqualizerKeepsItsPresetWhenTheListControlClearsIt()
     {
         // A ComboBox given a new preset list clears its selection and writes -1 back

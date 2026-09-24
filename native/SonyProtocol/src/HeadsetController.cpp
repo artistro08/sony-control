@@ -169,6 +169,11 @@ void HeadsetController::setAutoPowerOff(int index) {
     updateState([&](DeviceState& state) { state.autoPowerOff = index; });
 }
 
+void HeadsetController::switchPlayback(const std::string& address) {
+    command([&] { _protocol->switchPlayback(address); });
+    updateState([&](DeviceState& state) { markPlaying(state.playbackDevices, address); });
+}
+
 void HeadsetController::onStateChanged(StateCallback callback) {
     std::lock_guard lock(_callbackMutex);
     _stateCallback = std::move(callback);
@@ -271,6 +276,9 @@ void HeadsetController::readInitialState() {
     readOptional("auto power-off", capabilities.autoPowerOff, [&] { initial.autoPowerOff = _protocol->getAutoPowerOff(); });
     readOptional("firmware", capabilities.firmwareInfo, [&] { initial.firmware = _protocol->getFirmwareVersion(); });
     readOptional("codec", capabilities.codecInfo, [&] { initial.codec = _protocol->getCodec(); });
+    readOptional("playback devices", capabilities.multipoint && _generation.load() == ProtocolGeneration::V2, [&] {
+        initial.playbackDevices = _protocol->getPlaybackDevices();
+    });
 
     {
         std::lock_guard lock(_stateMutex);
@@ -284,9 +292,13 @@ void HeadsetController::handleNotification(const SonyFrame& frame) {
     DeviceState snapshot;
     {
         std::lock_guard lock(_stateMutex);
-        handled = _generation.load() == ProtocolGeneration::V2
-            ? applyV2Notification(frame.payload)
-            : applyV1Notification(frame.payload, _state);
+        if (frame.type == DataType::DataMdrNo2) {
+            handled = applyTable2Notification(frame.payload);
+        } else {
+            handled = _generation.load() == ProtocolGeneration::V2
+                ? applyV2Notification(frame.payload)
+                : applyV1Notification(frame.payload, _state);
+        }
         if (handled) {
             snapshot = _state;
         }
@@ -308,6 +320,20 @@ bool HeadsetController::applyV2Notification(const std::vector<uint8_t>& payload)
         return parseEqualizer(payload, _state.equalizer);
     }
     return _dispatcher.parseNotificationPayload(payload, _state, false);
+}
+
+bool HeadsetController::applyTable2Notification(const std::vector<uint8_t>& payload) {
+    // A device connected, left or took over playback
+    if (auto devices = parsePlaybackDevices(payload)) {
+        _state.playbackDevices = std::move(*devices);
+        return true;
+    }
+    // A switch finished, maybe started from the phone
+    if (const auto result = parsePlaybackSwitch(payload); result && result->succeeded) {
+        markPlaying(_state.playbackDevices, result->address);
+        return true;
+    }
+    return false;
 }
 
 void HeadsetController::updateState(const std::function<void(DeviceState&)>& mutation) {

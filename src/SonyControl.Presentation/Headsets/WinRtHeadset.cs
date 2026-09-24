@@ -35,7 +35,7 @@ public sealed class WinRtHeadset : IHeadset
 
     public HeadsetFeatures Features { get; }
 
-    public HeadsetSnapshot State => ToSnapshot(_client.State);
+    public HeadsetSnapshot State => WithPlaybackDevices(ToSnapshot(_client.State));
 
     public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => SharedPresets.Value;
 
@@ -69,6 +69,8 @@ public sealed class WinRtHeadset : IHeadset
     public Task SetAdaptiveVolumeAsync(bool enabled) => _client.SetAdaptiveVolumeAsync(enabled).AsTask();
 
     public Task SetAutoPowerOffAsync(int index) => _client.SetAutoPowerOffAsync(index).AsTask();
+
+    public Task SwitchPlaybackAsync(string address) => _client.SwitchPlaybackAsync(address).AsTask();
 
     public void Dispose()
     {
@@ -122,7 +124,15 @@ public sealed class WinRtHeadset : IHeadset
         capabilities.FirmwareInfo,
         capabilities.CodecInfo);
 
-    private void OnStateChanged(Core.HeadsetClient sender, Core.HeadsetState args) => StateChanged?.Invoke(this, ToSnapshot(args));
+    private void OnStateChanged(Core.HeadsetClient sender, Core.HeadsetState args) =>
+        StateChanged?.Invoke(this, WithPlaybackDevices(ToSnapshot(args)));
+
+    // The device list can't ride in the WinRT state struct, so it's read alongside it. An
+    // empty WinRT array arrives as null.
+    private HeadsetSnapshot WithPlaybackDevices(HeadsetSnapshot snapshot) => snapshot with
+    {
+        PlaybackDevices = [.. (_client.GetPlaybackDevices() ?? []).Select(device => new PlaybackDevice(device.Address, device.Name, device.Playing))],
+    };
 
     private void OnDisconnected(Core.HeadsetClient sender, object args) => Disconnected?.Invoke(this, EventArgs.Empty);
 }

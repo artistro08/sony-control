@@ -12,7 +12,7 @@ A Windows 11 tray app that controls Sony headphones from a native WinUI flyout.
 
 ## Introduction
 
-Click the headphones icon in the tray and you get battery, noise control, ambient sound, Focus on Voice, scenes, equalizer and DSEE in a flyout that looks like Windows' own. Everything else lives in a settings window. The app talks to the headphones over Bluetooth with protocol code based on [sony-device-center](https://github.com/marconvcm/sony-device-center) (MIT).
+Click the headphones icon in the tray and you get battery, noise control, ambient sound, Focus on Voice, scenes, switching the audio between your devices (multipoint), equalizer and DSEE in a flyout that looks like Windows' own. Everything else lives in a settings window. The app talks to the headphones over Bluetooth with protocol code based on [sony-device-center](https://github.com/marconvcm/sony-device-center) (MIT).
 
 Supported headphones:
 
@@ -96,7 +96,7 @@ $env:SONY_TEST_XM6_ADDRESS = "AC:80:0A:12:34:56"
     Or build every release file (MSIX and MSI, x64 and ARM64, plus the certificate) into `artifacts\release`:
 
     ```powershell
-    .\scripts\Build-Release.ps1 -Version 1.0.0.0
+    .\scripts\Build-Release.ps1 -Version 1.1.0.0
     ```
 
 ## License
