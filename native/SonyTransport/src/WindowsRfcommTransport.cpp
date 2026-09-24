@@ -67,7 +67,7 @@ void WindowsRfcommTransport::connect(const DeviceAddress& address) {
 
     const auto parsed = parseBluetoothAddress(address.str());
     if (!parsed) {
-        throw SonyException(SonyErrorCode::TransportFailure, "Invalid Bluetooth address: " + address.str());
+        throw SonyException(SonyErrorCode::TransportFailure, "Invalid Bluetooth address");
     }
     ensureWinsock();
 
@@ -81,7 +81,8 @@ void WindowsRfcommTransport::connect(const DeviceAddress& address) {
         Logger::info(LogCategory::Transport, "RFCOMM connected on the V2 service");
         return;
     }
-    throw SonyException(SonyErrorCode::TransportFailure, "Couldn't connect to " + address.str() + " (Winsock error " + std::to_string(error) + ")");
+    // No address in the message: it ends up in the log
+    throw SonyException(SonyErrorCode::TransportFailure, "Couldn't connect (Winsock error " + std::to_string(error) + ")");
 }
 
 int WindowsRfcommTransport::tryConnect(uint64_t address, const char* serviceUuid) {

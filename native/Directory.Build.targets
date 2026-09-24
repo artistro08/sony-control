@@ -18,13 +18,26 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Exploit Mitigations: this code parses bytes from Bluetooth devices -->
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <SpectreMitigation>Spectre</SpectreMitigation>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
     </ClCompile>
+    <Link>
+      <!-- CET shadow stacks exist only on x64 -->
+      <CETCompat Condition="'$(Platform)' == 'x64'">true</CETCompat>
+      <LinkControlFlowGuard>true</LinkControlFlowGuard>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+    </Link>
   </ItemDefinitionGroup>
 
   <!-- Static CRT, so the package needs no VC++ runtime framework -->
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
     <ClCompile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <!-- Edit and continue (/ZI) can't be combined with Control Flow Guard -->
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">

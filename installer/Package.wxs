@@ -12,8 +12,9 @@
         UpgradeCode="{5C1E9A47-2B8D-4F63-A0E4-7D3B9C6F1E82}"
         Scope="perUserOrMachine">
 
-        <!-- Upgrades -->
-        <MajorUpgrade DowngradeErrorMessage="A newer version of Sony Control is already installed." />
+        <!-- Upgrades: Windows Installer ignores the 4th version field, so 1.1.0.1 counts as
+             the same version as 1.1.0.0 and has to be allowed to replace it -->
+        <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Sony Control is already installed." />
         <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
         <!-- Apps & Features Entry -->

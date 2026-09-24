@@ -11,3 +11,7 @@ TestResults/
 *.pfx
 .superpowers/
 artifacts/
+*.p12
+*.pem
+*.key
+*.snk

@@ -51,7 +51,10 @@
        output folder and the package both copy it from there. Runs only when the build script
        passes the certificate. -->
   <Target Name="SignAppExecutable" AfterTargets="_CreateAppHost" Condition="'$(AppExeSigningThumbprint)' != '' And '$(AppExeSignTool)' != '' And Exists('$(AppHostIntermediatePath)')">
-    <Exec Command="&quot;$(AppExeSignTool)&quot; sign /q /fd SHA256 /sha1 $(AppExeSigningThumbprint) &quot;$(AppHostIntermediatePath)&quot;" />
+    <PropertyGroup>
+      <AppExeTimestampArguments Condition="'$(AppExeTimestampUrl)' != ''">/tr $(AppExeTimestampUrl) /td SHA256</AppExeTimestampArguments>
+    </PropertyGroup>
+    <Exec Command="&quot;$(AppExeSignTool)&quot; sign /q /fd SHA256 /sha1 $(AppExeSigningThumbprint) $(AppExeTimestampArguments) &quot;$(AppHostIntermediatePath)&quot;" />
   </Target>
 
 </Project>

@@ -27,18 +27,15 @@ New-Item -ItemType Directory -Force -Path $release | Out-Null
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $msbuild = & $vswhere -latest -prerelease -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
 
-# Signing For The Classic Exe (same certificate and SignTool as Build-Package.ps1), so Windows
-# keeps the tray icon's taskbar spot across updates
-$certificate = Get-ChildItem Cert:\CurrentUser\My |
-    Where-Object { $_.Subject -eq 'CN=Devin Green' -and $_.NotAfter -gt (Get-Date) -and $_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3' } |
-    Select-Object -First 1
-$signtool = Get-ChildItem (Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.sdk.buildtools') -Recurse -Filter signtool.exe |
-    Where-Object { $_.Directory.Name -eq 'x64' } |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1
-if (-not $certificate -or -not $signtool) {
-    throw 'Signing certificate or SignTool missing. Run scripts/New-DevCertificate.ps1 and restore the solution first.'
+if (-not $msbuild) {
+    throw 'MSBuild not found. Install Visual Studio 2026 with the workloads in README.md.'
 }
+
+# Signing For The Classic Exe And MSI (same certificate and SignTool as Build-Package.ps1), so
+# Windows keeps the tray icon's taskbar spot across updates and the installer shows its publisher
+. (Join-Path $PSScriptRoot 'Signing.ps1')
+$certificate = Get-SigningCertificate
+$signtool = Get-SignTool
 
 # Stamp The Version Into The MSIX Manifest
 $manifest = Join-Path $root 'src\SonyControl.App\Package.appxmanifest'
@@ -79,10 +76,7 @@ foreach ($platform in 'x64', 'ARM64') {
         throw "Publishing the classic build failed for $platform ($LASTEXITCODE)."
     }
 
-    & $signtool.FullName sign /q /fd SHA256 /sha1 $certificate.Thumbprint (Join-Path $publish 'SonyControl.exe')
-    if ($LASTEXITCODE -ne 0) {
-        throw "Signing the classic exe failed for $platform ($LASTEXITCODE)."
-    }
+    Invoke-Sign (Join-Path $publish 'SonyControl.exe') $certificate $signtool
 
     $msiOut = Join-Path $artifacts "msi\$platform"
     dotnet build (Join-Path $root 'installer\SonyControl.Installer.wixproj') -c Release `
@@ -94,6 +88,7 @@ foreach ($platform in 'x64', 'ARM64') {
     if ($LASTEXITCODE -ne 0) {
         throw "Building the MSI failed for $platform ($LASTEXITCODE)."
     }
+    Invoke-Sign (Join-Path $msiOut 'SonyControl.msi') $certificate $signtool
     Copy-Item (Join-Path $msiOut 'SonyControl.msi') (Join-Path $release "SonyControl_${Version}_$($platform.ToLower()).msi")
 }
 

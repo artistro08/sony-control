@@ -221,7 +221,7 @@ public sealed class HeadsetManager : IDisposable
 
         if (device.IsConnected)
         {
-            LogMessages.WindowsConnected(_logger, headset.Name, headset.Id);
+            LogMessages.WindowsConnected(_logger, headset.Name);
             ConnectionStateChanged?.Invoke(this, headset);
             if (_settings.IsAutoConnectEnabled(headset.Id) && headset.ConnectionState == HeadsetConnectionState.Disconnected)
             {

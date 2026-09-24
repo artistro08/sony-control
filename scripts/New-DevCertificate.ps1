@@ -28,6 +28,9 @@ if (-not $certificate) {
         -Type Custom `
         -Subject $subject `
         -KeyUsage DigitalSignature `
+        -KeyAlgorithm RSA `
+        -KeyLength 3072 `
+        -KeyExportPolicy NonExportable `
         -FriendlyName 'Sony Control package signing' `
         -CertStoreLocation 'Cert:\CurrentUser\My' `
         -NotAfter (Get-Date).AddYears(3) `

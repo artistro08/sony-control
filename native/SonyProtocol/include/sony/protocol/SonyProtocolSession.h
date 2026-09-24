@@ -55,6 +55,10 @@ public:
     // Runs on the reader thread.
     void onDisconnected(DisconnectedCallback callback);
 
+    // Bytes received but not yet part of a whole frame. Stays bounded however long a device
+    // goes without ending a frame.
+    [[nodiscard]] size_t bufferedByteCount() const;
+
     // Sequence management
     [[nodiscard]] uint8_t nextSequenceNumber() noexcept;
     [[nodiscard]] uint8_t currentSequenceNumber() const noexcept;

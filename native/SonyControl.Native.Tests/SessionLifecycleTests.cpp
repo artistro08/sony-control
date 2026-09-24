@@ -136,3 +136,25 @@ TEST(SessionLifecycle, DisconnectDuringConnectCancelsTheConnect) {
     EXPECT_TRUE(threw.load());
     EXPECT_FALSE(controller.isConnected());
 }
+
+// A device that sends a frame start and then never ends the frame must not grow the receive
+// buffer without limit; once it finally sends a proper frame, that frame still gets through.
+TEST(SessionLifecycle, EndlessFrameWithoutEndMarkerStaysBounded) {
+    FakeHeadset transport;
+    SonyProtocolSession session(&transport);
+    std::atomic<int> notifications{0};
+    session.onNotification([&](const sony::protocol::SonyFrame&) { ++notifications; });
+    session.connect(kTestAddress);
+
+    std::vector<uint8_t> garbage(64 * 1024, 0x00);
+    garbage.front() = sony::protocol::FrameCodec::START_MARKER;
+    transport.queueIncoming(garbage);
+    ASSERT_TRUE(sony::test::waitUntil([&] { return transport.incomingBytesAvailable() == 0; }));
+    std::this_thread::sleep_for(50ms);
+
+    EXPECT_LE(session.bufferedByteCount(), sony::protocol::FrameCodec::MAX_FRAME_SIZE * 2);
+
+    transport.notify({0x25, 0x00, 0x50, 0x00});
+    EXPECT_TRUE(sony::test::waitUntil([&] { return notifications.load() == 1; }));
+    session.disconnect();
+}

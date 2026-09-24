@@ -11,8 +11,9 @@ internal static partial class LogMessages
     // HEADSET MANAGER (1xx)
     // =========================================================================
 
-    [LoggerMessage(EventId = 100, Level = LogLevel.Information, Message = "Windows connected {Name} ({Address})")]
-    public static partial void WindowsConnected(ILogger logger, string name, string address);
+    // No Bluetooth address: logs get attached to bug reports
+    [LoggerMessage(EventId = 100, Level = LogLevel.Information, Message = "Windows connected {Name}")]
+    public static partial void WindowsConnected(ILogger logger, string name);
 
     [LoggerMessage(EventId = 101, Level = LogLevel.Information, Message = "Windows disconnected {Name}")]
     public static partial void WindowsDisconnected(ILogger logger, string name);

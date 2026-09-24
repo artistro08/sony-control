@@ -17,25 +17,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 
-# Find The Signing Certificate
-$certificate = Get-ChildItem Cert:\CurrentUser\My |
-    Where-Object { $_.Subject -eq 'CN=Devin Green' -and $_.NotAfter -gt (Get-Date) -and $_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3' } |
-    Select-Object -First 1
-if (-not $certificate) {
-    throw 'No signing certificate. Run scripts/New-DevCertificate.ps1 from an elevated PowerShell first.'
-}
+# Find The Signing Certificate And SignTool
+. (Join-Path $PSScriptRoot 'Signing.ps1')
+$certificate = Get-SigningCertificate
+$signtool = Get-SignTool
 
 # Find MSBuild
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $msbuild = & $vswhere -latest -prerelease -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-
-# Find SignTool (ships with the Windows SDK build tools NuGet package)
-$signtool = Get-ChildItem (Join-Path $env:USERPROFILE '.nuget\packages\microsoft.windows.sdk.buildtools') -Recurse -Filter signtool.exe |
-    Where-Object { $_.Directory.Name -eq 'x64' } |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1
-if (-not $signtool) {
-    throw 'SignTool not found. Restore the solution once so the Windows SDK build tools package is downloaded.'
+if (-not $msbuild) {
+    throw 'MSBuild not found. Install Visual Studio 2026 with the workloads in README.md.'
 }
 
 # Build And Package
@@ -48,8 +39,11 @@ foreach ($platform in $Platforms) {
         -p:UapAppxPackageBuildMode=SideloadOnly `
         -p:AppxPackageSigningEnabled=true `
         -p:PackageCertificateThumbprint=$($certificate.Thumbprint) `
+        -p:AppxPackageSigningTimestampServerUrl=$TimestampUrl `
+        -p:AppxPackageSigningTimestampDigestAlgorithm=SHA256 `
         -p:AppExeSigningThumbprint=$($certificate.Thumbprint) `
         -p:AppExeSignTool=$($signtool.FullName) `
+        -p:AppExeTimestampUrl=$TimestampUrl `
         -m -nologo -v:minimal
     if ($LASTEXITCODE -ne 0) {
         throw "Packaging failed for $platform ($LASTEXITCODE)."

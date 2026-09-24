@@ -22,9 +22,10 @@ void SonyProtocolSession::connect(const transport::DeviceAddress& address) {
     if (!_transport) {
         throw SonyException(SonyErrorCode::TransportFailure, "No transport configured");
     }
-    Logger::info(LogCategory::Transport, "Connecting transport to " + address.str());
+    // Addresses only at debug: logs get attached to bug reports
+    Logger::debug(LogCategory::Transport, "Connecting transport to " + address.str());
     _transport->connect(address);
-    Logger::info(LogCategory::Transport, "Transport connected to " + address.str());
+    Logger::info(LogCategory::Transport, "Transport connected");
     start();
 }
 
@@ -163,6 +164,11 @@ void SonyProtocolSession::_handleIncomingBytes(std::span<const std::byte> bytes)
     }
 }
 
+size_t SonyProtocolSession::bufferedByteCount() const {
+    std::lock_guard lock(_sessionMtx);
+    return _streamBuffer.size();
+}
+
 void SonyProtocolSession::_parseStream(std::vector<SonyFrame>& outFrames) {
     while (true) {
         auto startIt = std::find(_streamBuffer.begin(), _streamBuffer.end(), FrameCodec::START_MARKER);
@@ -193,9 +199,13 @@ void SonyProtocolSession::_parseStream(std::vector<SonyFrame>& outFrames) {
             continue;
         }
 
+        // No frame end yet. A frame that has run past twice the largest frame (escaping at most
+        // doubles it) can't be real: drop it whole, so a device that never ends a frame can't
+        // grow the buffer without limit. The next start marker resyncs.
         if (endIt == _streamBuffer.end()) {
             if (_streamBuffer.size() > FrameCodec::MAX_FRAME_SIZE * 2) {
-                _streamBuffer.erase(_streamBuffer.begin());
+                Logger::debug(LogCategory::Session, "Dropped " + std::to_string(_streamBuffer.size()) + " bytes without a frame end");
+                _streamBuffer.clear();
             }
             return;
         }

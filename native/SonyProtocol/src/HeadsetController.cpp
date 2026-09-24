@@ -61,7 +61,9 @@ void HeadsetController::connect(const transport::DeviceAddress& address) {
     std::lock_guard connectLock(_connectMutex);
     const uint64_t generation = _disconnectGeneration.load();
 
-    Logger::info(kCategory, "Connecting to " + std::string(to_string(_profile.model)) + " at " + address.str());
+    // Address only at debug: logs get attached to bug reports
+    Logger::info(kCategory, "Connecting to " + std::string(to_string(_profile.model)));
+    Logger::debug(kCategory, "Headset address " + address.str());
     _session->connect(address);
 
     try {
