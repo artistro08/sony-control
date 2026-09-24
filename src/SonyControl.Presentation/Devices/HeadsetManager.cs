@@ -57,6 +57,12 @@ public sealed class HeadsetManager : IDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// Wait after Windows connects a headset before opening the control link. A headset still
+    /// setting up its audio drops a link opened straight away, and can drop off Windows with it.
+    /// </summary>
+    public TimeSpan WindowsConnectSettle { get; init; } = TimeSpan.Zero;
+
     public event EventHandler<ManagedHeadset>? HeadsetAdded;
 
     public event EventHandler<ManagedHeadset>? HeadsetRemoved;
@@ -219,7 +225,7 @@ public sealed class HeadsetManager : IDisposable
             ConnectionStateChanged?.Invoke(this, headset);
             if (_settings.IsAutoConnectEnabled(headset.Id) && headset.ConnectionState == HeadsetConnectionState.Disconnected)
             {
-                StartConnectLoop(headset, 0);
+                StartConnectLoop(headset, 0, WindowsConnectSettle);
             }
             return;
         }
@@ -291,7 +297,7 @@ public sealed class HeadsetManager : IDisposable
         }
     }
 
-    private void StartConnectLoop(ManagedHeadset headset, int firstDelayIndex)
+    private void StartConnectLoop(ManagedHeadset headset, int firstDelayIndex, TimeSpan settle = default)
     {
         var cancellation = new CancellationTokenSource();
         CancellationTokenSource? previous;
@@ -305,7 +311,7 @@ public sealed class HeadsetManager : IDisposable
         previous?.Cancel();
         previous?.Dispose();
 
-        var task = ConnectLoopAsync(headset, firstDelayIndex, previousTask, cancellation.Token);
+        var task = ConnectLoopAsync(headset, firstDelayIndex, settle, previousTask, cancellation.Token);
         lock (_gate)
         {
             headset.ConnectTask = task;
@@ -324,7 +330,7 @@ public sealed class HeadsetManager : IDisposable
         loop?.Dispose();
     }
 
-    private async Task ConnectLoopAsync(ManagedHeadset headset, int delayIndex, Task? previousLoop, CancellationToken cancellationToken)
+    private async Task ConnectLoopAsync(ManagedHeadset headset, int delayIndex, TimeSpan settle, Task? previousLoop, CancellationToken cancellationToken)
     {
         // Never run two connects on one headset: let a cancelled loop's in-flight connect finish first.
         if (previousLoop is not null)
@@ -334,6 +340,11 @@ public sealed class HeadsetManager : IDisposable
 
         try
         {
+            if (settle > TimeSpan.Zero)
+            {
+                await Task.Delay(settle, _timeProvider, cancellationToken).ConfigureAwait(false);
+            }
+
             while (true)
             {
                 var delay = delayIndex < ConnectDelays.Length ? ConnectDelays[delayIndex] : SteadyConnectDelay;

@@ -25,17 +25,16 @@
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
     </Style>
 
-    <!-- Noise Control Tiles: Quick Settings' tile button, 48 px tall with the standard control
-         corners and just the icon; the label sits underneath (NoiseModeTile) -->
-    <Style x:Key="TileButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="Height" Value="48" />
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+    <!-- Caution Text: a short error in place of a status line -->
+    <Style x:Key="CautionTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <Style x:Key="TileButtonSelectedStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+    <!-- Noise Control Tiles: Quick Settings' tile, a toggle button 48 px tall with the standard
+         control corners and just the icon; the label sits underneath (NoiseModeTile). Checked is
+         the accent look, and the icon takes the checked foreground with it. -->
+    <Style x:Key="TileButtonStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="Height" Value="48" />

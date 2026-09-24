@@ -5,9 +5,11 @@
 #include "HeadsetClient.g.cpp"
 #endif
 
+#include "BluetoothAudio.h"
 #include "sony/protocol/DeviceProfileRegistry.h"
 #include "sony/protocol/EqualizerPresets.h"
 #include "sony/protocol/ErrorMapping.h"
+#include "sony/transport/BluetoothAddress.h"
 #include "sony/transport/Logger.h"
 #include "sony/transport/WindowsRfcommTransport.h"
 
@@ -178,6 +180,15 @@ void HeadsetClient::SetLogHandler(Core::NativeLogHandler const& handler) {
 void HeadsetClient::SetDebugLogging(bool enabled) {
     sony::Logger::setDeveloperMode(enabled);
     sony::Logger::setLogLevel(enabled ? sony::LogLevel::Debug : sony::LogLevel::Info);
+}
+
+IAsyncOperation<bool> HeadsetClient::ConnectAudioAsync(hstring bluetoothAddress) {
+    const auto address = sony::transport::parseBluetoothAddress(to_string(bluetoothAddress));
+    co_await resume_background();
+    if (!address) {
+        co_return false;
+    }
+    co_return sony::audio::requestAudioConnect(*address);
 }
 
 com_array<Core::EqualizerPresetInfo> HeadsetClient::GetEqualizerPresets() {

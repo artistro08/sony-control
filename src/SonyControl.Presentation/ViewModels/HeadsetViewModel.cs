@@ -62,6 +62,10 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
     private string? _errorMessage;
     private ITimer? _errorTimer;
     private ITimer? _missingEarbudTimer;
+    private ITimer? _connectTimer;
+    private bool _bluetoothConnecting;
+    private bool _connectReachedWindows;
+    private bool _connectRetried;
     private bool _applying;
     private int _noiseCommandsInFlight;
 
@@ -108,6 +112,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         });
         DisconnectCommand = new RelayCommand(() => AutoConnect = false);
         ReconnectCommand = new RelayCommand(() => ReconnectRequested?.Invoke(this, EventArgs.Empty));
+        ConnectCommand = new RelayCommand(() => ConnectRequested?.Invoke(this, EventArgs.Empty));
 
         _headset.StateChanged += OnHeadsetStateChanged;
         SceneItems = [.. settings.Scenes.Select(scene => new SceneItemViewModel(scene))];
@@ -169,14 +174,61 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowReconnect => _connectionState == HeadsetConnectionState.Disconnected && IsWindowsConnected;
 
+    /// <summary>
+    /// Connect (Bluetooth) shows while the headset is paired but Windows isn't connected to it,
+    /// and not while a connect is already under way.
+    /// </summary>
+    public bool ShowConnect => !IsWindowsConnected && !IsBluetoothConnecting;
+
+    /// <summary>
+    /// Windows has been asked to connect the headset and hasn't yet.
+    /// </summary>
+    public bool IsBluetoothConnecting
+    {
+        get => _bluetoothConnecting;
+        private set
+        {
+            if (!SetProperty(ref _bluetoothConnecting, value))
+            {
+                return;
+            }
+            OnPropertyChanged(nameof(ShowConnect));
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(PickerStatusText));
+        }
+    }
+
+    /// <summary>
+    /// How long a Bluetooth connect gets before it counts as failed.
+    /// </summary>
+    public static TimeSpan BluetoothConnectTimeout { get; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// Raised by <see cref="ConnectCommand"/>; the flyout asks Windows to connect the headset.
+    /// </summary>
+    public event EventHandler? ConnectRequested;
+
+    /// <summary>
+    /// Connects the headset over Bluetooth, from Windows' side (like Connect in Settings).
+    /// </summary>
+    public IRelayCommand ConnectCommand { get; }
+
     public string StatusText => _connectionState switch
     {
+        _ when IsBluetoothConnecting => "Connecting…",
         HeadsetConnectionState.Connected when !string.IsNullOrEmpty(_snapshot.Codec) => $"Connected · {_snapshot.Codec}",
         HeadsetConnectionState.Connected when !IsKnownModel => "Connected · Unverified model",
         HeadsetConnectionState.Connected => "Connected",
         HeadsetConnectionState.Connecting => "Connecting…",
+        // Windows still has them but the app doesn't (let go, or the control link is down)
+        _ when IsWindowsConnected => "App Disconnected",
         _ => "Disconnected",
     };
+
+    /// <summary>
+    /// The settings pages' warning bar: the app's side or the whole device.
+    /// </summary>
+    public string DisconnectedMessage => IsWindowsConnected ? "App Disconnected" : "Device is disconnected.";
 
     /// <summary>
     /// The status line only shows while not connected; once connected the header shows the
@@ -478,11 +530,18 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _errorMessage, value))
             {
                 OnPropertyChanged(nameof(HasError));
+                OnPropertyChanged(nameof(PickerStatusText));
             }
         }
     }
 
     public bool HasError => _errorMessage is not null;
+
+    /// <summary>
+    /// The headphone list's status line: an error while one shows (the list has no warning
+    /// bar), otherwise <see cref="StatusText"/>.
+    /// </summary>
+    public string PickerStatusText => _errorMessage ?? StatusText;
 
     // =========================================================================
     // METHODS
@@ -559,6 +618,18 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsAvailable));
         OnPropertyChanged(nameof(ShowBattery));
         OnPropertyChanged(nameof(ShowReconnect));
+        OnPropertyChanged(nameof(ShowConnect));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(PickerStatusText));
+        OnPropertyChanged(nameof(DisconnectedMessage));
+        if (IsBluetoothConnecting && IsWindowsConnected)
+        {
+            _connectReachedWindows = true;
+        }
+        if (state == HeadsetConnectionState.Connected)
+        {
+            EndBluetoothConnect();
+        }
         if (!SetProperty(ref _connectionState, state, nameof(ConnectionState)))
         {
             return;
@@ -566,6 +637,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsConnected));
         OnPropertyChanged(nameof(IsConnecting));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(PickerStatusText));
         OnPropertyChanged(nameof(ShowStatus));
         OnPropertyChanged(nameof(ShowDisconnectedWarning));
         OnPropertyChanged(nameof(ShowReconnect));
@@ -590,6 +662,7 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         _noiseThrottler.Dispose();
         _errorTimer?.Dispose();
         _missingEarbudTimer?.Dispose();
+        _connectTimer?.Dispose();
     }
 
     private static string Percent(int? level) => level is null ? NoValue : $"{level}%";
@@ -684,8 +757,57 @@ public sealed class HeadsetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(Codec));
         OnPropertyChanged(nameof(AudioText));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(PickerStatusText));
 
         _lowBattery.Update(Id, DeviceName, snapshot.Battery);
+    }
+
+    /// <summary>
+    /// Shows "Connecting…" until the control link opens, giving up with an error after
+    /// <see cref="BluetoothConnectTimeout"/>.
+    /// </summary>
+    internal void StartBluetoothConnect()
+    {
+        IsBluetoothConnecting = true;
+        _connectReachedWindows = false;
+        _connectRetried = false;
+        _connectTimer?.Dispose();
+        _connectTimer = _timeProvider.CreateTimer(_ => _ui.Post(FailBluetoothConnect), null, BluetoothConnectTimeout, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// A headset still setting up can drop straight back off Windows. True, once per connect,
+    /// when that just happened and the connect should be asked for again.
+    /// </summary>
+    internal bool TakeConnectRetry()
+    {
+        if (!IsBluetoothConnecting || !_connectReachedWindows || IsWindowsConnected || _connectRetried)
+        {
+            return false;
+        }
+        _connectRetried = true;
+        _connectReachedWindows = false;
+        return true;
+    }
+
+    /// <summary>
+    /// Windows refused, or the connect never happened.
+    /// </summary>
+    internal void FailBluetoothConnect()
+    {
+        if (!IsBluetoothConnecting)
+        {
+            return;
+        }
+        EndBluetoothConnect();
+        ShowError("Couldn't connect. Make sure your headphones are on and nearby.");
+    }
+
+    private void EndBluetoothConnect()
+    {
+        _connectTimer?.Dispose();
+        _connectTimer = null;
+        IsBluetoothConnecting = false;
     }
 
     private void SwitchPlayback(PlaybackDevice device)

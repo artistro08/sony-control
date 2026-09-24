@@ -25,7 +25,13 @@ internal sealed class FakeNotificationService : INotificationService
 {
     public List<(string DeviceName, int Level)> Shown { get; } = [];
 
-    public void ShowLowBattery(string deviceName, int level) => Shown.Add((deviceName, level));
+    public List<string> HeadsetIds { get; } = [];
+
+    public void ShowLowBattery(string headsetId, string deviceName, int level)
+    {
+        HeadsetIds.Add(headsetId);
+        Shown.Add((deviceName, level));
+    }
 }
 
 internal sealed class FakeStartupTaskService : IStartupTaskService
@@ -43,5 +49,21 @@ internal sealed class FakeStartupTaskService : IStartupTaskService
     {
         Enabled = enabled && !RefuseEnable;
         return Task.FromResult(Enabled);
+    }
+}
+
+/// <summary>
+/// Records connect requests; <see cref="Accept"/> decides what Windows answers.
+/// </summary>
+internal sealed class FakeBluetoothAudio : IBluetoothAudio
+{
+    public List<string> Requests { get; } = [];
+
+    public bool Accept { get; set; } = true;
+
+    public Task<bool> ConnectAsync(string bluetoothAddress)
+    {
+        Requests.Add(bluetoothAddress);
+        return Task.FromResult(Accept);
     }
 }

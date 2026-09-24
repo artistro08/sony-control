@@ -61,6 +61,7 @@
 
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="BluetoothAudio.h" />
     <ClInclude Include="HeadsetClient.h">
       <DependentUpon>HeadsetClient.idl</DependentUpon>
     </ClInclude>
@@ -70,6 +71,7 @@
     <ClCompile Include="HeadsetClient.cpp">
       <DependentUpon>HeadsetClient.idl</DependentUpon>
     </ClCompile>
+    <ClCompile Include="BluetoothAudio.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>
 

@@ -15,6 +15,7 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
     private readonly HeadsetManager _manager;
     private readonly FlyoutNavigator _navigator;
     private readonly Func<ManagedHeadset, HeadsetViewModel> _createHeadsetViewModel;
+    private readonly IBluetoothAudio _bluetoothAudio;
     private readonly UiContext _ui = new();
 
     private FlyoutRoute _route = new(FlyoutPageKind.Empty, null, false);
@@ -23,13 +24,15 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
     public FlyoutViewModel(
         HeadsetManager manager,
         FlyoutNavigator navigator,
-        Func<ManagedHeadset, HeadsetViewModel> createHeadsetViewModel)
+        Func<ManagedHeadset, HeadsetViewModel> createHeadsetViewModel,
+        IBluetoothAudio bluetoothAudio)
     {
         ArgumentNullException.ThrowIfNull(manager);
 
         _manager = manager;
         _navigator = navigator;
         _createHeadsetViewModel = createHeadsetViewModel;
+        _bluetoothAudio = bluetoothAudio;
 
         PickCommand = new RelayCommand<HeadsetViewModel>(Pick);
         BackCommand = new RelayCommand(Back);
@@ -92,6 +95,12 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
     public IRelayCommand QuitCommand { get; }
 
     /// <summary>
+    /// Opens the page of the headset with this ID, as picking it would (a notification about
+    /// it was clicked). Unknown IDs are ignored.
+    /// </summary>
+    public void ShowHeadset(string headsetId) => Pick(Headsets.FirstOrDefault(headset => headset.Id == headsetId));
+
+    /// <summary>
     /// Refreshes battery. Called each time the flyout opens.
     /// </summary>
     public Task OnOpenedAsync()
@@ -150,6 +159,7 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
             Headsets.Remove(viewModel);
             viewModel.AutoConnectChanged -= OnAutoConnectChanged;
             viewModel.ReconnectRequested -= OnReconnectRequested;
+            viewModel.ConnectRequested -= OnConnectRequested;
             viewModel.Dispose();
         }
         Refresh();
@@ -158,7 +168,12 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
     // Also covers Windows connecting or disconnecting the headset, which can change the page
     private void OnConnectionStateChanged(object? sender, ManagedHeadset headset) => _ui.Post(() =>
     {
-        Headsets.FirstOrDefault(item => item.Id == headset.Id)?.UpdateConnectionState(headset.ConnectionState);
+        var viewModel = Headsets.FirstOrDefault(item => item.Id == headset.Id);
+        viewModel?.UpdateConnectionState(headset.ConnectionState);
+        if (viewModel?.TakeConnectRetry() == true)
+        {
+            _ = RequestAudioConnectAsync(viewModel);
+        }
         Refresh();
     });
 
@@ -181,6 +196,42 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
         }
     }
 
+    // Connect asks Windows for the headset's audio; the connect then arrives like any other
+    // Windows connect, and the headset view model gives up on its own if it never does
+    private async void OnConnectRequested(object? sender, EventArgs e)
+    {
+        if (sender is not HeadsetViewModel headset || !headset.ShowConnect)
+        {
+            return;
+        }
+        headset.StartBluetoothConnect();
+
+        // Connecting on purpose takes back headphones let go of with Disconnect
+        if (headset.IsReleased)
+        {
+            headset.AutoConnect = true;
+        }
+
+        await RequestAudioConnectAsync(headset).ConfigureAwait(true);
+    }
+
+    private async Task RequestAudioConnectAsync(HeadsetViewModel headset)
+    {
+        bool accepted;
+        try
+        {
+            accepted = await _bluetoothAudio.ConnectAsync(headset.Id).ConfigureAwait(true);
+        }
+        catch (Exception)
+        {
+            accepted = false;
+        }
+        if (!accepted)
+        {
+            _ui.Post(headset.FailBluetoothConnect);
+        }
+    }
+
     private void Add(ManagedHeadset headset)
     {
         if (Headsets.Any(item => item.Id == headset.Id))
@@ -190,6 +241,7 @@ public sealed class FlyoutViewModel : ObservableObject, IDisposable
         var viewModel = _createHeadsetViewModel(headset);
         viewModel.AutoConnectChanged += OnAutoConnectChanged;
         viewModel.ReconnectRequested += OnReconnectRequested;
+        viewModel.ConnectRequested += OnConnectRequested;
         Headsets.Add(viewModel);
     }
 

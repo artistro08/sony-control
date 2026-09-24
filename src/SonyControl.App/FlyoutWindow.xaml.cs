@@ -109,6 +109,17 @@ public sealed partial class FlyoutWindow : Window
     /// </summary>
     public event EventHandler? CloseRequested;
 
+    /// <summary>
+    /// Opens the flyout if it isn't already (a notification was clicked).
+    /// </summary>
+    internal void Open(NativeMethods.RECT? iconRect)
+    {
+        if (!_isOpen)
+        {
+            ShowFlyout(iconRect);
+        }
+    }
+
     internal void Toggle(NativeMethods.RECT? iconRect)
     {
         if (_isOpen)

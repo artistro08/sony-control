@@ -24,10 +24,18 @@ internal sealed class AppNotificationService : INotificationService, IDisposable
     private bool _registered;
     private ToastNotifier? _classicNotifier;
 
+    private const string HeadsetArgument = "headset";
+
     public AppNotificationService(ILogger logger)
     {
         _logger = logger;
     }
+
+    /// <summary>
+    /// A notification was clicked; carries the ID of the headset it's about. Raised on a
+    /// background thread.
+    /// </summary>
+    public event EventHandler<string>? HeadsetClicked;
 
     public void Register()
     {
@@ -39,8 +47,14 @@ internal sealed class AppNotificationService : INotificationService, IDisposable
                 return;
             }
 
-            // Handle clicks in this process so a click doesn't start a second copy.
-            AppNotificationManager.Default.NotificationInvoked += (_, _) => { };
+            // Handle clicks in this process so a click doesn't start a second copy
+            AppNotificationManager.Default.NotificationInvoked += (_, args) =>
+            {
+                if (args.Arguments.TryGetValue(HeadsetArgument, out var headsetId))
+                {
+                    HeadsetClicked?.Invoke(this, headsetId);
+                }
+            };
             AppNotificationManager.Default.Register();
             _registered = true;
         }
@@ -50,14 +64,14 @@ internal sealed class AppNotificationService : INotificationService, IDisposable
         }
     }
 
-    public void ShowLowBattery(string deviceName, int level)
+    public void ShowLowBattery(string headsetId, string deviceName, int level)
     {
         var title = $"{deviceName} battery is low";
         var message = $"{level}% left. Charge them soon.";
 
         if (_classicNotifier is not null)
         {
-            ShowClassic(title, message);
+            ShowClassic(headsetId, title, message);
             return;
         }
         if (!_registered)
@@ -66,6 +80,7 @@ internal sealed class AppNotificationService : INotificationService, IDisposable
         }
 
         var notification = new AppNotificationBuilder()
+            .AddArgument(HeadsetArgument, headsetId)
             .AddText(title)
             .AddText(message)
             .BuildNotification();
@@ -81,13 +96,22 @@ internal sealed class AppNotificationService : INotificationService, IDisposable
         }
     }
 
-    private void ShowClassic(string title, string message)
+    private void ShowClassic(string headsetId, string title, string message)
     {
         try
         {
+            // The click only reaches this process while it runs; the launch text carries the headset
             var xml = new XmlDocument();
-            xml.LoadXml($"<toast><visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(title)}</text><text>{SecurityElement.Escape(message)}</text></binding></visual></toast>");
-            _classicNotifier!.Show(new ToastNotification(xml));
+            xml.LoadXml($"<toast launch=\"{SecurityElement.Escape(headsetId)}\"><visual><binding template=\"ToastGeneric\"><text>{SecurityElement.Escape(title)}</text><text>{SecurityElement.Escape(message)}</text></binding></visual></toast>");
+            var toast = new ToastNotification(xml);
+            toast.Activated += (_, args) =>
+            {
+                if (args is ToastActivatedEventArgs activated && !string.IsNullOrEmpty(activated.Arguments))
+                {
+                    HeadsetClicked?.Invoke(this, activated.Arguments);
+                }
+            };
+            _classicNotifier!.Show(toast);
         }
         catch (Exception ex)
         {

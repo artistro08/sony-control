@@ -105,6 +105,10 @@ namespace SonyControl.Core
         static void SetDebugLogging(Boolean enabled);
         static EqualizerPresetInfo[] GetEqualizerPresets();
 
+        // Asks Windows to connect this paired headset's audio (what Connect in Settings > Sound
+        // does). True when Windows took the request; the headset still has to be on and near.
+        static Windows.Foundation.IAsyncOperation<Boolean> ConnectAudioAsync(String bluetoothAddress);
+
         String DeviceName { get; };
         String ModelName { get; };
         Boolean IsKnownModel { get; };

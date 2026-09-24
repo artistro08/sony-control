@@ -17,7 +17,7 @@
             ColumnSpacing="12">
             <TextBlock
                 VerticalAlignment="Center"
-                Text="Device is disconnected."
+                Text="{x:Bind Headset.DisconnectedMessage, Mode=OneWay}"
                 TextWrapping="Wrap" />
             <Button
                 Grid.Column="1"

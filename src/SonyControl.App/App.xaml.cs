@@ -80,14 +80,18 @@ public partial class App : Application, IDisposable
             name => new WinRtHeadset(name),
             _settings,
             time,
-            _loggerFactory.CreateLogger<HeadsetManager>());
+            _loggerFactory.CreateLogger<HeadsetManager>())
+        {
+            WindowsConnectSettle = TimeSpan.FromSeconds(1.5),
+        };
 
         // View Models
         var headsetLogger = _loggerFactory.CreateLogger<HeadsetViewModel>();
         _flyout = new FlyoutViewModel(
             _manager,
             new FlyoutNavigator(_settings),
-            managed => new HeadsetViewModel(managed, _settings, lowBattery, time, headsetLogger));
+            managed => new HeadsetViewModel(managed, _settings, lowBattery, time, headsetLogger),
+            new WindowsBluetoothAudio());
         _flyout.SettingsRequested += (_, _) => ShowSettings();
         _flyout.QuitRequested += (_, _) => Quit();
 
@@ -114,10 +118,17 @@ public partial class App : Application, IDisposable
         {
             _flyoutWindow.HideFlyout();
             var (x, y, edge, _, _) = ScreenGeometry.GetMenuAnchor(point.X, point.Y);
-            _trayMenu.ShowAt(x, y, edge);
+            _trayMenu.ShowAt(x, y, edge, _flyout.Headsets);
         };
         _trayMenu.SettingsRequested += (_, _) => ShowSettings();
         _trayMenu.QuitRequested += (_, _) => Quit();
+
+        // Notification Clicks open the flyout on the headset the notification was about
+        _notifications.HeadsetClicked += (_, headsetId) => _flyoutWindow.DispatcherQueue.TryEnqueue(() =>
+        {
+            _flyout.ShowHeadset(headsetId);
+            _flyoutWindow.Open(_trayIcon.GetIconRect());
+        });
 
         // Hover Tooltip: connected headsets and their batteries; not over the open flyout
         _trayTooltip = new TrayTooltipWindow(_flyout);

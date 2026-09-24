@@ -53,4 +53,8 @@ public sealed partial class NoiseModeTile : UserControl
         get => (ICommand?)GetValue(CommandProperty);
         set => SetValue(CommandProperty, value);
     }
+
+    // A click toggles the button on its own; the tile shows what the headset view model says
+    // (clicking the selected mode keeps it selected). Click runs before the command.
+    private void OnClick(object sender, RoutedEventArgs e) => TileButton.IsChecked = IsSelected;
 }

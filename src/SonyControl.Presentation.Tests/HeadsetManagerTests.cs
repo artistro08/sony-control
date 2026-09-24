@@ -57,6 +57,26 @@ public sealed class HeadsetManagerTests
     }
 
     [TestMethod]
+    public async Task ControlLinkWaitsForTheHeadsetToSettleAfterWindowsConnects()
+    {
+        // Right after Windows connects, a headset still setting up audio drops a control link
+        _manager.Dispose();
+        _manager = new HeadsetManager(_source, name => _created[name] = new FakeHeadset(name), _settings, _time, NullLogger<HeadsetManager>.Instance)
+        {
+            WindowsConnectSettle = TimeSpan.FromSeconds(1.5),
+        };
+        _manager.Start();
+
+        _source.Report(Xm6);
+        await Task.Delay(50);
+        Assert.AreEqual(0, _created["WF-1000XM6"].ConnectAttempts);
+
+        _time.Advance(TimeSpan.FromSeconds(1.5));
+
+        Assert.IsTrue(await TestWait.UntilAsync(() => _created["WF-1000XM6"].ConnectAttempts == 1));
+    }
+
+    [TestMethod]
     public void OtherBrandsAreIgnored()
     {
         _source.Report(new BluetoothDeviceInfo("device-buds", "Galaxy Buds2", "00:11:22:33:44:55", true));

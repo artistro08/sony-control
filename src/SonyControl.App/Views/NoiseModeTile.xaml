@@ -5,18 +5,20 @@
     xmlns:app="using:SonyControl.App"
     xmlns:local="using:SonyControl.App.Views">
 
-    <!-- Noise Mode Tile: built like a Windows Quick Settings tile, an icon-only button (accent
-         while selected) with its label underneath -->
+    <!-- Noise Mode Tile: built like a Windows Quick Settings tile, an icon-only toggle button
+         (accent while checked, its icon following) with its label underneath -->
     <StackPanel Spacing="8">
-        <Button
-            HorizontalAlignment="Stretch"
+        <ToggleButton
+            x:Name="TileButton"
             AutomationProperties.Name="{x:Bind Label, Mode=OneWay}"
+            Click="OnClick"
             Command="{x:Bind Command, Mode=OneWay}"
             CommandParameter="{x:Bind app:TileStyles.ModeName(Mode), Mode=OneWay}"
-            Style="{x:Bind app:TileStyles.Pick(IsSelected), Mode=OneWay}">
+            IsChecked="{x:Bind IsSelected, Mode=OneWay}"
+            Style="{StaticResource TileButtonStyle}">
             <!-- 20 px box: the drawing leaves a margin, so the visible icon is Quick Settings' 16 px -->
             <local:NoiseModeIcon Mode="{x:Bind Mode, Mode=OneWay}" />
-        </Button>
+        </ToggleButton>
         <!-- Caption size (12), as under Quick Settings' tiles -->
         <TextBlock
             HorizontalAlignment="Center"

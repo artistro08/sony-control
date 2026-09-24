@@ -8,7 +8,11 @@ namespace SonyControl.Presentation.Notifications;
 /// </summary>
 public interface INotificationService
 {
-    void ShowLowBattery(string deviceName, int level);
+    /// <summary>
+    /// Shows the low-battery notification. Clicking it opens the flyout on the headset with
+    /// this ID.
+    /// </summary>
+    void ShowLowBattery(string headsetId, string deviceName, int level);
 }
 
 /// <summary>
@@ -56,6 +60,6 @@ public sealed class LowBatteryMonitor
             }
             _alerted[headsetId] = true;
         }
-        _notifications.ShowLowBattery(deviceName, lowest.Value);
+        _notifications.ShowLowBattery(headsetId, deviceName, lowest.Value);
     }
 }

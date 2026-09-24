@@ -31,7 +31,7 @@ public sealed class HeadsetViewModelTests
             ConnectionState = HeadsetConnectionState.Connected,
             IsWindowsConnected = true,
         };
-        _viewModel = new HeadsetViewModel(_managed,_settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
+        _viewModel = new HeadsetViewModel(_managed, _settings, new LowBatteryMonitor(_settings, _notifications), _time, NullLogger.Instance);
     }
 
     [TestCleanup]
@@ -398,8 +398,15 @@ public sealed class HeadsetViewModelTests
         Assert.IsTrue(_viewModel.IsConnecting);
         Assert.IsFalse(_viewModel.IsConnected);
 
+        // Windows still has the headphones; only the app let go
+        _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
+        Assert.AreEqual("App Disconnected", _viewModel.StatusText);
+        Assert.AreEqual("App Disconnected", _viewModel.DisconnectedMessage);
+
+        _managed.IsWindowsConnected = false;
         _viewModel.UpdateConnectionState(HeadsetConnectionState.Disconnected);
         Assert.AreEqual("Disconnected", _viewModel.StatusText);
+        Assert.AreEqual("Device is disconnected.", _viewModel.DisconnectedMessage);
     }
 
     [TestMethod]
@@ -492,6 +499,7 @@ public sealed class HeadsetViewModelTests
         _headset.RaiseStateChanged(_headset.State with { Battery = new BatteryLevels(14, 14, 40, 90, false) });
 
         Assert.AreEqual(("WF-1000XM6", 15), _notifications.Shown.Single());
+        Assert.AreEqual("AC:80:0A:00:00:06", _notifications.HeadsetIds.Single()); // a click opens this headset
     }
 }
 
@@ -544,18 +552,21 @@ public sealed class FlyoutViewModelTests
     private readonly FakeDeviceSource _source = new();
     private readonly FakeTimeProvider _time = new();
     private readonly AppSettings _settings = new(new InMemorySettingsStore());
+    private readonly FakeBluetoothAudio _audio = new();
+    private readonly Dictionary<string, FakeHeadset> _fakes = [];
     private HeadsetManager _manager = null!;
     private FlyoutViewModel _flyout = null!;
 
     [TestInitialize]
     public void CreateFlyout()
     {
-        _manager = new HeadsetManager(_source, name => new FakeHeadset(name), _settings, _time, NullLogger<HeadsetManager>.Instance);
+        _manager = new HeadsetManager(_source, name => _fakes[name] = new FakeHeadset(name), _settings, _time, NullLogger<HeadsetManager>.Instance);
         var monitor = new LowBatteryMonitor(_settings, new FakeNotificationService());
         _flyout = new FlyoutViewModel(
             _manager,
             new FlyoutNavigator(_settings),
-            managed => new HeadsetViewModel(managed, _settings, monitor, _time, NullLogger.Instance));
+            managed => new HeadsetViewModel(managed, _settings, monitor, _time, NullLogger.Instance),
+            _audio);
         _manager.Start();
     }
 
@@ -565,6 +576,139 @@ public sealed class FlyoutViewModelTests
         _flyout.Dispose();
         _manager.Dispose();
     }
+
+    // =========================================================================
+    // CONNECT (BLUETOOTH AUDIO)
+    // =========================================================================
+
+    [TestMethod]
+    public void ConnectOffersOnlyWhileWindowsIsDisconnected()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4 with { IsConnected = false });
+
+        Assert.IsFalse(Headset("WF-1000XM6").ShowConnect);
+        Assert.IsTrue(Headset("WH-1000XM4").ShowConnect);
+    }
+
+    [TestMethod]
+    public void ConnectAsksWindowsAndShowsConnecting()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+
+        xm4.ConnectCommand.Execute(null);
+
+        CollectionAssert.AreEqual(new[] { "AC:80:0A:00:00:04" }, _audio.Requests);
+        Assert.IsTrue(xm4.IsBluetoothConnecting);
+        Assert.AreEqual("Connecting…", xm4.StatusText);
+        Assert.IsFalse(xm4.ShowConnect);
+    }
+
+    [TestMethod]
+    public async Task ConnectFinishesOnceTheControlLinkIsOpen()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+        xm4.ConnectCommand.Execute(null);
+
+        _source.Report(Xm4);
+
+        Assert.IsTrue(await TestWait.UntilAsync(() => !xm4.IsBluetoothConnecting));
+        Assert.IsTrue(xm4.IsConnected);
+        Assert.IsNull(xm4.ErrorMessage);
+    }
+
+    [TestMethod]
+    public void WindowsDroppingMidConnectRetriesOnce()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+        // The control link can't open while the headset keeps dropping off Windows
+        _fakes["WH-1000XM4"].ConnectFailures.Enqueue(new COMException("gone", HeadsetErrorMessages.DisconnectedHResult));
+        _fakes["WH-1000XM4"].ConnectFailures.Enqueue(new COMException("gone", HeadsetErrorMessages.DisconnectedHResult));
+        xm4.ConnectCommand.Execute(null);
+
+        _source.Report(Xm4);
+        _source.Report(Xm4 with { IsConnected = false });
+        _source.Report(Xm4);
+        _source.Report(Xm4 with { IsConnected = false });
+
+        Assert.AreEqual(2, _audio.Requests.Count);
+        Assert.IsTrue(xm4.IsBluetoothConnecting); // still counting down to the give-up
+    }
+
+    [TestMethod]
+    public void RefusedConnectSaysSo()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+        _audio.Accept = false;
+
+        xm4.ConnectCommand.Execute(null);
+
+        Assert.IsFalse(xm4.IsBluetoothConnecting);
+        Assert.AreEqual("Couldn't connect. Make sure your headphones are on and nearby.", xm4.ErrorMessage);
+        Assert.AreEqual(xm4.ErrorMessage, xm4.PickerStatusText); // the list row says so too
+    }
+
+    [TestMethod]
+    public void PickerRowShowsStatusWithoutAnError()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+
+        Assert.AreEqual("Disconnected", Headset("WH-1000XM4").PickerStatusText);
+    }
+
+    [TestMethod]
+    public void ConnectThatNeverHappensGivesUp()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+        xm4.ConnectCommand.Execute(null);
+
+        _time.Advance(HeadsetViewModel.BluetoothConnectTimeout);
+
+        Assert.IsFalse(xm4.IsBluetoothConnecting);
+        Assert.AreEqual("Couldn't connect. Make sure your headphones are on and nearby.", xm4.ErrorMessage);
+    }
+
+    [TestMethod]
+    public void ConnectTakesBackAReleasedHeadset()
+    {
+        _source.Report(Xm4 with { IsConnected = false });
+        var xm4 = Headset("WH-1000XM4");
+        xm4.DisconnectCommand.Execute(null);
+
+        xm4.ConnectCommand.Execute(null);
+
+        Assert.IsFalse(xm4.IsReleased);
+    }
+
+    [TestMethod]
+    public void NotificationClickOpensThatHeadset()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+
+        _flyout.ShowHeadset("AC:80:0A:00:00:04");
+
+        Assert.IsTrue(_flyout.IsDeviceVisible);
+        Assert.AreEqual("WH-1000XM4", _flyout.CurrentHeadset?.DeviceName);
+    }
+
+    [TestMethod]
+    public void NotificationForAnUnknownHeadsetChangesNothing()
+    {
+        _source.Report(Xm6);
+        _source.Report(Xm4);
+
+        _flyout.ShowHeadset("11:22:33:44:55:66");
+
+        Assert.IsTrue(_flyout.IsPickerVisible);
+    }
+
+    private HeadsetViewModel Headset(string name) => _flyout.Headsets.Single(headset => headset.DeviceName == name);
 
     [TestMethod]
     public void StartsOnEmptyPage()
@@ -747,7 +891,8 @@ public sealed class SettingsViewModelTests
         _flyout = new FlyoutViewModel(
             _manager,
             new FlyoutNavigator(_settings),
-            managed => new HeadsetViewModel(managed, _settings, monitor, time, NullLogger.Instance));
+            managed => new HeadsetViewModel(managed, _settings, monitor, time, NullLogger.Instance),
+            new FakeBluetoothAudio());
         _viewModel = new SettingsViewModel(_flyout, _settings, _logLevel, _startup, _themes.Add, _nativeDebug.Add, _ => { }, "C:\\Logs", NullLogger.Instance);
         _manager.Start();
     }
@@ -824,7 +969,8 @@ public sealed class SettingsViewModelTests
             using var flyout = new FlyoutViewModel(
                 manager,
                 new FlyoutNavigator(settings),
-                managed => new HeadsetViewModel(managed, settings, monitor, time, NullLogger.Instance));
+                managed => new HeadsetViewModel(managed, settings, monitor, time, NullLogger.Instance),
+                new FakeBluetoothAudio());
             var viewModel = new SettingsViewModel(flyout, settings, new LogLevelSwitch(), new FakeStartupTaskService(), _ => { }, _ => { }, _ => { }, "C:\\Logs", NullLogger.Instance);
             manager.Start();
 

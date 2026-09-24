@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using SonyControl.Presentation.Placement;
 using SonyControl.Presentation.Settings;
+using SonyControl.Presentation.ViewModels;
 using Windows.Foundation;
 using Windows.Graphics;
 using WinRT.Interop;
@@ -30,10 +31,6 @@ internal sealed partial class TrayMenuWindow : Window
         Content = _root;
         _hwnd = WindowNative.GetWindowHandle(this);
 
-        // Menu Items
-        _menu.Items.Add(CreateItem("Settings", "", () => SettingsRequested?.Invoke(this, EventArgs.Empty)));
-        _menu.Items.Add(new MenuFlyoutSeparator());
-        _menu.Items.Add(CreateItem("Quit", "", () => QuitRequested?.Invoke(this, EventArgs.Empty)));
         _menu.Closed += (_, _) => AppWindow.Hide();
 
         // Window Chrome
@@ -66,10 +63,13 @@ internal sealed partial class TrayMenuWindow : Window
     public event EventHandler? QuitRequested;
 
     /// <summary>
-    /// Opens the menu at a screen point (physical pixels), growing away from the taskbar.
+    /// Opens the menu at a screen point (physical pixels), growing away from the taskbar, with
+    /// a Connect submenu listing the paired headsets (ones Windows already has are disabled).
     /// </summary>
-    public void ShowAt(int x, int y, TaskbarEdge edge)
+    public void ShowAt(int x, int y, TaskbarEdge edge, IReadOnlyList<HeadsetViewModel> headsets)
     {
+        BuildItems(headsets);
+
         AppWindow.MoveAndResize(new RectInt32(x, y, 1, 1));
         AppWindow.Show(true);
         Activate();
@@ -98,6 +98,32 @@ internal sealed partial class TrayMenuWindow : Window
         AppTheme.Dark => ElementTheme.Dark,
         _ => ElementTheme.Default,
     };
+
+    // Connect submenu (when anything's paired), then Settings and Quit
+    private void BuildItems(IReadOnlyList<HeadsetViewModel> headsets)
+    {
+        _menu.Items.Clear();
+        if (headsets.Count > 0)
+        {
+            var connect = new MenuFlyoutSubItem
+            {
+                Text = "Connect",
+                Icon = new FontIcon { Glyph = "" },
+                Padding = (Thickness)Application.Current.Resources["MenuFlyoutItemThemePaddingNarrow"],
+            };
+            foreach (var headset in headsets)
+            {
+                var item = CreateItem(headset.DeviceName, "", () => headset.ConnectCommand.Execute(null));
+                item.IsEnabled = headset.ShowConnect;
+                connect.Items.Add(item);
+            }
+            _menu.Items.Add(connect);
+            _menu.Items.Add(new MenuFlyoutSeparator());
+        }
+        _menu.Items.Add(CreateItem("Settings", "", () => SettingsRequested?.Invoke(this, EventArgs.Empty)));
+        _menu.Items.Add(new MenuFlyoutSeparator());
+        _menu.Items.Add(CreateItem("Quit", "", () => QuitRequested?.Invoke(this, EventArgs.Empty)));
+    }
 
     private static MenuFlyoutItem CreateItem(string text, string glyph, Action onClick)
     {

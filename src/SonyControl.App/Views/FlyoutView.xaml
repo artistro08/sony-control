@@ -78,7 +78,7 @@
                     <DataTemplate x:DataType="vm:HeadsetViewModel">
                         <Grid
                             AutomationProperties.Name="{x:Bind DeviceName}"
-                            ColumnDefinitions="Auto,*"
+                            ColumnDefinitions="Auto,*,Auto"
                             ColumnSpacing="12"
                             PointerCanceled="OnPickerRowRest"
                             PointerEntered="OnPickerRowHover"
@@ -109,9 +109,24 @@
                             </Grid>
                             <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind DeviceName}" />
-                                <TextBlock Style="{StaticResource SecondaryTextStyle}" Text="{x:Bind StatusText, Mode=OneWay}" />
+                                <!-- Status, or a failed connect in the caution color (the list has no warning bar) -->
+                                <TextBlock Style="{x:Bind app:TileStyles.PickStatus(HasError), Mode=OneWay}" Text="{x:Bind PickerStatusText, Mode=OneWay}" />
                                 <local:BatteryRow Headset="{x:Bind}" Visibility="{x:Bind IsConnected, Mode=OneWay}" />
                             </StackPanel>
+
+                            <!-- Connect, for headphones Windows isn't connected to (the row itself opens the page) -->
+                            <Button
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Connect over Bluetooth"
+                                Command="{x:Bind ConnectCommand}"
+                                ToolTipService.ToolTip="Connects over Bluetooth. Another device using them may lose the audio."
+                                Visibility="{x:Bind ShowConnect, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE702;" />
+                                    <TextBlock Text="Connect" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
                     </DataTemplate>
                 </ListView.ItemTemplate>
@@ -146,7 +161,7 @@
                         <!-- Battery -->
                         <local:BatteryRow HorizontalAlignment="Center" Headset="{x:Bind ViewModel.CurrentHeadset, Mode=OneWay}" />
 
-                        <!-- Status Line: "Connecting…" / "Disconnected" until connected, then the audio line -->
+                        <!-- Status Line: "Connecting…" / "App Disconnected" / "Disconnected" until connected, then the audio line -->
                         <TextBlock
                             HorizontalAlignment="Center"
                             Style="{StaticResource SecondaryTextStyle}"
@@ -158,7 +173,7 @@
                             Text="{x:Bind ViewModel.CurrentHeadset.AudioText, Mode=OneWay}"
                             Visibility="{x:Bind ViewModel.CurrentHeadset.IsConnected, Mode=OneWay}" />
 
-                        <!-- Reconnect: a plain link under "Disconnected" while Windows has the headset -->
+                        <!-- Reconnect: a plain link under "App Disconnected" (Windows has the headset, the app doesn't) -->
                         <HyperlinkButton
                             HorizontalAlignment="Center"
                             AutomationProperties.Name="Reconnect device"
@@ -167,6 +182,19 @@
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <local:PlugIcon VerticalAlignment="Center" IsConnected="True" />
                                 <TextBlock Text="Reconnect device" />
+                            </StackPanel>
+                        </HyperlinkButton>
+
+                        <!-- Connect: asks Windows to connect the headset over Bluetooth, while Windows isn't -->
+                        <HyperlinkButton
+                            HorizontalAlignment="Center"
+                            AutomationProperties.Name="Connect over Bluetooth"
+                            Command="{x:Bind ViewModel.CurrentHeadset.ConnectCommand, Mode=OneWay}"
+                            ToolTipService.ToolTip="Connects over Bluetooth. Another device using them may lose the audio."
+                            Visibility="{x:Bind ViewModel.CurrentHeadset.ShowConnect, Mode=OneWay, FallbackValue=Collapsed}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="16" Glyph="&#xE702;" />
+                                <TextBlock Text="Connect" />
                             </StackPanel>
                         </HyperlinkButton>
                     </StackPanel>
