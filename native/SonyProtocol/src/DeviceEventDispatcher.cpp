@@ -1,4 +1,5 @@
 #include "sony/protocol/DeviceEventDispatcher.h"
+#include "sony/protocol/EqualizerPresets.h"
 #include <algorithm>
 
 namespace sony::protocol {
@@ -184,7 +185,7 @@ bool DeviceEventDispatcher::parseNotificationPayload(const std::vector<uint8_t>&
     // Equalizer notification: 0x57 or 0x59
     if (opcode == 0x57 || opcode == 0x59) {
         if (payload.size() >= 3) {
-            inOutState.equalizer.preset = static_cast<int>(payload[2]);
+            inOutState.equalizer.preset = normalizeEqualizerPreset(static_cast<int>(payload[2]));
             if (payload.size() >= 10) {
                 inOutState.equalizer.clearBass = static_cast<int>(payload[4]) - 10;
                 for (size_t i = 0; i < 5; ++i) {

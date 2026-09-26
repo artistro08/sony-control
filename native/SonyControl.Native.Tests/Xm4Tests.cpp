@@ -135,6 +135,18 @@ TEST(Xm4Notifications, ParsesEqualizer) {
     EXPECT_EQ(state.equalizer.bands, (std::array<int, 5>{-10, -5, 0, 5, 10}));
 }
 
+// The Sony app can leave a custom curve in any of six memory slots (0xa0-0xa5), not just
+// 0xa0. This app only ever writes 0xa0, so the other five fold to it on readback, so a
+// device left on "Custom 3" still shows a picker selection instead of none at all.
+TEST(Xm4Notifications, FoldsOtherCustomSlotsIntoManual) {
+    DeviceState state;
+    const Payload payload{0x59, 0x01, 0xa2, 0x06, 0x0a, 0x00, 0x05, 0x0a, 0x0f, 0x14};
+
+    EXPECT_TRUE(applyV1Notification(payload, state));
+    EXPECT_EQ(state.equalizer.preset, 0xa0);
+    EXPECT_EQ(state.equalizer.bands, (std::array<int, 5>{-10, -5, 0, 5, 10}));
+}
+
 TEST(Xm4Notifications, IgnoresV2Layouts) {
     DeviceState state;
     const Payload payload{0x69, 0x17, 0x01, 0x01, 0x00, 0x00, 0x00};

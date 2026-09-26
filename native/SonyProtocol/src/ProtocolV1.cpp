@@ -1,5 +1,6 @@
 #include "sony/protocol/ProtocolV1.h"
 #include "ProtocolHelpers.h"
+#include "sony/protocol/EqualizerPresets.h"
 
 #include <algorithm>
 #include <chrono>
@@ -168,7 +169,7 @@ EqualizerState ProtocolV1::getEqualizer() {
         throw SonyException(SonyErrorCode::InvalidResponse, "Incomplete equalizer response");
 
     EqualizerState state;
-    state.preset = static_cast<int>(resp.payload[2]);
+    state.preset = normalizeEqualizerPreset(static_cast<int>(resp.payload[2]));
     state.clearBass = static_cast<int>(resp.payload[4]) - 10;
     for (size_t i = 0; i < 5; ++i) {
         state.bands[i] = static_cast<int>(resp.payload[5 + i]) - 10;
