@@ -1,4 +1,5 @@
 #include "sony/protocol/V1Notifications.h"
+#include "sony/protocol/EqualizerPresets.h"
 
 namespace sony::protocol {
 
@@ -41,7 +42,7 @@ bool applyEqualizer(std::span<const uint8_t> payload, DeviceState& state) {
     if (payload.size() < 10 || payload[1] != kEqInquired) {
         return false;
     }
-    state.equalizer.preset = static_cast<int>(payload[2]);
+    state.equalizer.preset = normalizeEqualizerPreset(static_cast<int>(payload[2]));
     state.equalizer.clearBass = static_cast<int>(payload[4]) - 10;
     for (size_t i = 0; i < state.equalizer.bands.size(); ++i) {
         state.equalizer.bands[i] = static_cast<int>(payload[5 + i]) - 10;

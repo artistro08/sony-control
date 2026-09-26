@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SemanticTypes.h"
+#include "sony/protocol/EqualizerPresets.h"
 
 #include <cstdint>
 #include <optional>
@@ -47,7 +48,7 @@ inline bool parseEqualizer(std::span<const uint8_t> payload, EqualizerState& sta
     if (payload.size() < 4 || payload[1] != 0x00) {
         return false;
     }
-    state.preset = static_cast<int>(payload[2]);
+    state.preset = normalizeEqualizerPreset(static_cast<int>(payload[2]));
     state.clearBass = 0;
     state.bands = {0, 0, 0, 0, 0};
 

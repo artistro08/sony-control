@@ -48,4 +48,17 @@ struct EqualizerPresetInfo {
 /// aliases ("bass", "treble") and a decimal number. Returns -1 when unknown.
 [[nodiscard]] int equalizerPresetFromName(std::string_view name);
 
+/// Sony's firmware keeps a custom curve in one of several memory slots, not just one:
+/// 0xa0 (what the Sony Headphones Connect app calls "Custom 1") through 0xa5 ("Custom 6").
+/// A device the Sony app was used on can come back with a custom curve stored in any of
+/// them, but this app only ever writes and recognizes 0xa0 (Manual), so a headset with,
+/// say, "Custom 3" active reported an unknown preset and the picker showed nothing even
+/// though the bands were read correctly. Folding the whole range onto Manual here, at the
+/// one place raw preset bytes turn into app state, is what fixes that for every reader.
+[[nodiscard]] constexpr int normalizeEqualizerPreset(int raw) noexcept {
+    constexpr int kCustomRangeStart = static_cast<int>(EqualizerPreset::Manual); // 0xa0
+    constexpr int kCustomRangeEnd = kCustomRangeStart + 5;                       // 0xa5
+    return (raw >= kCustomRangeStart && raw <= kCustomRangeEnd) ? kCustomRangeStart : raw;
+}
+
 } // namespace sony::protocol
